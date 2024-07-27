@@ -4,6 +4,7 @@
 // based on qemu's hw/riscv/virt.c:
 //
 // 00001000 -- boot ROM, provided by qemu
+#define USYSCALL 0x1000
 // 02000000 -- CLINT
 // 0C000000 -- PLIC
 // 10000000 -- uart0 
@@ -65,3 +66,7 @@
 //   TRAPFRAME (p->trapframe, used by the trampoline)
 //   TRAMPOLINE (the same page as in the kernel)
 #define TRAPFRAME (TRAMPOLINE - PGSIZE)
+
+struct usyscall{
+    int pid;
+};
