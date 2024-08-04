@@ -75,6 +75,28 @@ int
 sys_pgaccess(void)
 {
   // lab pgtbl: your code here.
+  struct proc *p=myproc();
+  int n;
+  uint64 pgusr,abits;
+  uint bitmask=0;
+  argaddr(0,&pgusr);
+  argint(1,&n);
+  argaddr(2,&abits);
+  if(n<=0||n>32){
+    printf("len: 0<len<=32\n");
+    return -1;
+  }
+  for(int i=0;i<n;i++){
+    pte_t* pagetable=walk(p->pagetable,pgusr+i*PGSIZE,0);
+    if(pagetable==0)
+      panic("page not exist");
+    if(*pagetable & PTE_A){
+      bitmask |= (1L<<i);
+    }
+    *pagetable^=(*pagetable&PTE_A);
+  }
+  if(copyout(p->pagetable,abits,(char*)&bitmask,sizeof(bitmask))<0)
+    return -1;
   return 0;
 }
 #endif
