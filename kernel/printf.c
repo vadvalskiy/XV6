@@ -14,7 +14,7 @@
 #include "riscv.h"
 #include "defs.h"
 #include "proc.h"
-
+#define ld_to_p(i) ((void*)(i))
 volatile int panicked = 0;
 
 // lock to avoid interleaving concurrent printf's.
@@ -122,6 +122,7 @@ panic(char *s)
   printf("panic: ");
   printf(s);
   printf("\n");
+  backtrace();
   panicked = 1; // freeze uart output from other CPUs
   for(;;)
     ;
@@ -132,4 +133,14 @@ printfinit(void)
 {
   initlock(&pr.lock, "pr");
   pr.locking = 1;
+}
+
+void backtrace()
+{
+  uint64 fp=r_fp();
+  printf("backtrace:\n");
+  while(fp!=PGROUNDDOWN(fp)){
+    printf("%p\n",ld_to_p(*(uint64*)(fp-8)));
+    fp=*(uint64*)(fp-16);
+  }
 }

@@ -131,7 +131,9 @@ found:
     release(&p->lock);
     return 0;
   }
-
+  p->alarmret=0;
+  p->interval=0;
+  p->ticks_passed=0;
   // An empty user page table.
   p->pagetable = proc_pagetable(p);
   if(p->pagetable == 0){
