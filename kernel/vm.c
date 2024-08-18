@@ -302,32 +302,32 @@ uvmfree(pagetable_t pagetable, uint64 sz)
 // physical memory.
 // returns 0 on success, -1 on failure.
 // frees any allocated pages on failure.
-int
-uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
+
+int uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
 {
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
-
-  for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walk(old, i, 0)) == 0)
+  for(i=0;i<sz;i+=PGSIZE){
+    if((pte=walk(old,i,0))==0)
       panic("uvmcopy: pte should exist");
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
-    pa = PTE2PA(*pte);
-    flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    *pte|=PTE_R|PTE_RSW;
+    if(*pte & PTE_W)
+        *pte^=PTE_W;
+    pa=PTE2PA(*pte);
+    flags=PTE_FLAGS(*pte);
+    if(mappages(new,i,PGSIZE,pa,flags)!=0){
       goto err;
     }
+    acquire_lock();
+    add_ref((void*)pa);
+    release_lock();
   }
   return 0;
 
- err:
+  err:
   uvmunmap(new, 0, i / PGSIZE, 1);
   return -1;
 }
@@ -351,16 +351,27 @@ uvmclear(pagetable_t pagetable, uint64 va)
 int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
-  uint64 n, va0, pa0;
+  pte_t* pte;
+  uint64 n, va0, pa0,pa1;
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
+    if((pte=walk(pagetable,va0,0))==0)
+      return -1;
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;
+    if(*pte & PTE_RSW){
+      if((pa1=(uint64)kalloc())==0)
+        return -1;
+      memmove((void*)pa1,(void*)pa0,PGSIZE);
+      kfree((void*)pa0);
+      *pte=PA2PTE(pa1)|PTE_FLAGS(*pte^PTE_RSW);
+      pa0=pa1;
+    }
     memmove((void *)(pa0 + (dstva - va0)), src, n);
 
     len -= n;
