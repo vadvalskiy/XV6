@@ -3,8 +3,12 @@
 #include "memlayout.h"
 #include "riscv.h"
 #include "spinlock.h"
+#include "sleeplock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fs.h"
+#include "fcntl.h"
+#include "file.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -65,7 +69,77 @@ usertrap(void)
     intr_on();
 
     syscall();
-  } else if((which_dev = devintr()) != 0){
+  }else if(r_scause()==13 || r_scause()==15){
+    if(killed(p))
+      exit(-1);
+    uint64 scause=r_scause();
+    uint64 addr=r_stval();
+    if(addr>=MAXVA){
+      setkilled(p);
+      goto out;
+    }
+
+    struct vma* vma=0;
+    uint64 begin;
+    for(int i=0;i<NOFILE;i++){
+      if(p->vma_arr[i].used==0)
+        continue;
+      begin=(uint64)p->vma_arr[i].addr;
+      uint64 end=begin+p->vma_arr[i].length;
+      if(addr>=begin && addr<end){
+        vma=&p->vma_arr[i];
+        break;
+      }
+    }
+    if(vma==0){
+      printf("usertrap(): unexpected scause %p va %p is not in vma\n",scause,addr);
+      setkilled(p);
+      goto out;
+    }
+
+    if(scause==13 && vma->file->readable==0){
+      printf("usertrap():the file is not readable\n");
+      setkilled(p);
+      goto out;
+    }
+    if(scause==15 && vma->file->writable==0){
+      printf("usertrap():the file is not writable\n");
+      setkilled(p);
+      goto out;
+    }
+
+    void* pa=kalloc();
+    if(pa==0){
+      printf("kalloc():not free physical page\n");
+      setkilled(p);
+      goto out;
+    }
+    memset(pa,0,PGSIZE);
+
+    int perm=PTE_U;
+    if(vma->prot & PROT_READ)
+      perm|=PTE_R;
+    if(vma->prot & PROT_WRITE)
+      perm|=PTE_W;
+    if(vma->prot & PROT_EXEC)
+      perm|=PTE_X;
+
+    addr=PGROUNDDOWN(addr);
+    if(mappages(p->pagetable,addr,PGSIZE,(uint64)pa,perm)!=0){
+      kfree(pa);
+      setkilled(p);
+      goto out;
+    }
+
+    ilock(vma->file->ip);
+    if(readi(vma->file->ip,1,addr,addr-begin+vma->offset,PGSIZE)==0){
+      iunlock(vma->file->ip);
+      uvmunmap(p->pagetable,addr,1,1);
+      setkilled(p);
+      goto out;
+    }
+    iunlock(vma->file->ip);
+  }else if((which_dev = devintr()) != 0){
     // ok
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
@@ -73,6 +147,7 @@ usertrap(void)
     setkilled(p);
   }
 
+out:
   if(killed(p))
     exit(-1);
 

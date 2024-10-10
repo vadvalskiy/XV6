@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fs.h"
+#include "sleeplock.h"
+#include "file.h"
+#include "fcntl.h"
 
 struct cpu cpus[NCPU];
 
@@ -17,6 +21,7 @@ struct spinlock pid_lock;
 
 extern void forkret(void);
 static void freeproc(struct proc *p);
+static void copy_vma(struct vma* dis,const struct vma* src);
 
 extern char trampoline[]; // trampoline.S
 
@@ -145,6 +150,8 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+
+  p->mmap_top=MAXVA-2*PGSIZE;
 
   return p;
 }
@@ -279,7 +286,7 @@ growproc(int n)
 int
 fork(void)
 {
-  int i, pid;
+  int i,j, pid;
   struct proc *np;
   struct proc *p = myproc();
 
@@ -296,6 +303,13 @@ fork(void)
   }
   np->sz = p->sz;
 
+  j=0;
+  for(i=0;i<NOFILE;i++){
+    if(p->vma_arr[i].used==0)
+      continue;
+    copy_vma(&np->vma_arr[j++],&p->vma_arr[i]);
+    filedup(p->vma_arr[i].file);
+  }
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
 
@@ -357,6 +371,24 @@ exit(int status)
       struct file *f = p->ofile[fd];
       fileclose(f);
       p->ofile[fd] = 0;
+    }
+  }
+
+  //Unmap all mapped files.
+  for(int i=0;i<NOFILE;i++){
+    if(p->vma_arr[i].used==0)
+      continue;
+    struct vma* vma=&p->vma_arr[i];
+    vma->used=0;
+    uint64 begin=(uint64)vma->addr;
+    uint64 end=PGROUNDUP(begin+vma->length);
+    for(uint64 n=begin;n<end;n+=PGSIZE){
+      pte_t *pte;
+      if((pte=walk(p->pagetable,n,0)) == 0)
+        continue;
+      if((*pte & PTE_V)==0)
+        continue;
+      uvmunmap(p->pagetable,n,1,1);
     }
   }
 
@@ -680,4 +712,18 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+static void copy_vma(struct vma* dis,const struct vma* src)
+{
+  if(dis==0 || src==0)
+    panic("copy_vma");
+  dis->addr=src->addr;
+  dis->used=src->used;
+  dis->length=src->length;
+  dis->prot=src->prot;
+  dis->flags=src->flags;
+  dis->fd=src->fd;
+  dis->offset=src->offset;
+  dis->file=src->file;
 }
