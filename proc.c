@@ -324,6 +324,7 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
+  int ticks_run;
   c->proc = 0;
   
   for(;;){
@@ -333,21 +334,29 @@ scheduler(void)
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      // Looking for RUNNABLE process
       if(p->state != RUNNABLE)
         continue;
 
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
+      cprintf("Scheduler starts running process %d\n", p->pid);
 
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
+      for (ticks_run = 1; ticks_run <= 10; ticks_run++) {
+        if (p->state == ZOMBIE)
+            break;
+
+        c->proc = p;
+        switchuvm(p);
+        p->state = RUNNING;
+
+        swtch(&(c->scheduler), p->context);
+        switchkvm();
+
+        cprintf("Process %d finished running %d ticks\n", p->pid, ticks_run);
+      }
 
       // Process is done running for now.
       // It should have changed its p->state before coming back.
+      cprintf("Finished running process %d\n", p->pid);
       c->proc = 0;
     }
     release(&ptable.lock);
