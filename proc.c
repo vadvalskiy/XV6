@@ -7,6 +7,9 @@
 #include "proc.h"
 #include "spinlock.h"
 
+
+//static uint global_creation_order = 0;
+
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
@@ -65,6 +68,15 @@ myproc(void) {
   return p;
 }
 
+
+static unsigned int seed = 12345;
+
+int rand()
+{
+    seed = (1103515245 * seed + 12345) % 2147483648;
+    return seed;
+}
+
 //PAGEBREAK: 32
 // Look in the process table for an UNUSED proc.
 // If found, change state to EMBRYO and initialize
@@ -88,6 +100,11 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  //p->creation_order = global_creation_order++;
+  p->creation_order = ticks;
+  p->priority = 3;
+  p->burst_time = rand()%20;
+  p->confidence = rand()%100;
 
   release(&ptable.lock);
 
@@ -311,6 +328,20 @@ wait(void)
   }
 }
 
+
+
+int
+no_runnable_proc_except(struct proc *exclude_proc)
+{
+    struct proc *p;
+    for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+        if (p->state == RUNNABLE && p != exclude_proc)
+            return 0; // Found another runnable process
+    }
+    return 1; // No other runnable process
+}
+
+
 //PAGEBREAK: 42
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
@@ -319,41 +350,164 @@ wait(void)
 //  - swtch to start running that process
 //  - eventually that process transfers control
 //      via swtch back to the scheduler.
-void
-scheduler(void)
-{
-  struct proc *p;
-  struct cpu *c = mycpu();
-  c->proc = 0;
-  
-  for(;;){
-    // Enable interrupts on this processor.
-    sti();
 
-    // Loop over process table looking for process to run.
-    acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
+void scheduler(void) {
+    struct proc *p;
+    struct cpu *c = mycpu();
+    c->proc = 0;
 
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
+    // Initialize WRR counters for each priority
+    int weights[4] = {0, 3, 2, 1};  // WRR weights for priorities 1, 2, 3
+    c->wrr_counter[1] = weights[1];
+    c->wrr_counter[2] = weights[2];
+    c->wrr_counter[3] = weights[3];
 
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
+    for (;;) {
+        sti();  // Enable interrupts
 
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
+        acquire(&ptable.lock);
+
+        struct proc *selected_proc = 0;
+        int selected_priority = 0;
+
+        // WRR logic: Select the next priority queue
+        for (int priority = 1; priority <= 3; priority++) {
+            if (c->wrr_counter[priority] > 0) {
+                selected_priority = priority;
+                c->wrr_counter[priority]--;
+                break;
+            }
+        }
+
+        // Reset WRR counters after a complete round
+        if (selected_priority == 0) {
+            c->wrr_counter[1] = weights[1];
+            c->wrr_counter[2] = weights[2];
+            c->wrr_counter[3] = weights[3];
+        }
+
+        if (selected_priority == 1) {
+            // Round-Robin Scheduler for Priority 1
+            struct proc *rr_proc = 0;
+            int oldest_run = 1e9;
+
+            for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+                if (p->state == RUNNABLE && p->priority == 1 && p->last_run_time < oldest_run) {
+                    rr_proc = p;
+                    oldest_run = p->last_run_time;
+                }
+                if ( (p->state == RUNNABLE) && (p->pid > 2) )
+                  p->age++;
+                // else
+                //   p->age=0;
+            }
+
+            if (rr_proc) {
+                selected_proc = rr_proc;
+                cprintf("Running process PID=%d from Priority 1 (RR)\n", selected_proc->pid);
+                cprintf("Running process age=%d from Priority 1 (RR)\n", selected_proc->age);
+
+                c->proc = selected_proc;
+                switchuvm(selected_proc);
+                selected_proc->state = RUNNING;
+                selected_proc->last_run_time = ticks;  // Update the last run time
+                selected_proc->age=0;
+
+                // Save process state during the switch
+                swtch(&(c->scheduler), selected_proc->context);
+                switchkvm();
+
+                // Process resumes here after switching back
+                if (selected_proc->state == RUNNING) {
+                    selected_proc->state = RUNNABLE;  // Mark it runnable again
+                }
+
+                c->proc = 0;
+            }
+        } else if (selected_priority == 2) {
+            // SJF with Confidence Scheduler for Priority 2
+            struct proc *sjf_proc = 0;
+            int min_burst = 1e9;
+
+            for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+                if (p->state == RUNNABLE && p->priority == 2 && p->burst_time < min_burst) {
+                    sjf_proc = p;
+                    min_burst = p->burst_time;
+                }
+            }
+            if (sjf_proc) {
+                int rand_num = rand() % 100;
+                if (rand_num <= sjf_proc->confidence || sjf_proc->confidence == 0) {
+                    cprintf("Scheduler: Running Process PID=%d, Burst=%d, Confidence=%d (SJF)\n",
+                            sjf_proc->pid, sjf_proc->burst_time, sjf_proc->confidence);
+
+                    c->proc = sjf_proc;
+                    switchuvm(sjf_proc);
+                    sjf_proc->state = RUNNING;
+                    sjf_proc->age=0;
+                    swtch(&(c->scheduler), sjf_proc->context);
+                    switchkvm();
+                    c->proc = 0;
+                }
+            }
+        } else if (selected_priority == 3) {
+            // FCFS Scheduler for Priority 3
+            struct proc *fcfs_proc = 0;
+            int earliest_order = 1e9;
+
+            for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+                if (p->state == RUNNABLE && p->priority == 3 && p->creation_order < earliest_order) {
+                    fcfs_proc = p;
+                    earliest_order = p->creation_order;
+                }
+            }
+
+            if (fcfs_proc) {
+                selected_proc = fcfs_proc;
+                cprintf("Running process PID=%d from Priority 3 (FCFS)\n", selected_proc->pid);
+
+                c->proc = selected_proc;
+                switchuvm(selected_proc);
+                selected_proc->state = RUNNING;
+                selected_proc->age=0;
+                swtch(&(c->scheduler), selected_proc->context);
+                switchkvm();
+
+                // Process resumes here after switching back
+                if (selected_proc->state == RUNNING) {
+                    selected_proc->state = RUNNABLE;  // Mark it runnable again
+                }
+
+                c->proc = 0;
+            }
+        }
+
+        // Fallback: Select any runnable process if no priority-based process was executed
+        if (!c->proc) {
+            struct proc *fallback_proc = 0;
+
+            for (p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+                if (p->state == RUNNABLE && p->priority == 0) {
+                    fallback_proc = p;
+                    break;
+                }
+            }
+
+            if (fallback_proc) {
+                cprintf("Running process PID=%d from Priority 0 (Fallback)\n", fallback_proc->pid);
+                c->proc = fallback_proc;
+                switchuvm(fallback_proc);
+                fallback_proc->state = RUNNING;
+                swtch(&(c->scheduler), fallback_proc->context);
+                switchkvm();
+                c->proc = 0;
+            }
+        }
+
+        release(&ptable.lock);
     }
-    release(&ptable.lock);
-
-  }
 }
+
 
 // Enter scheduler.  Must hold only ptable.lock
 // and have changed proc->state. Saves and restores
@@ -531,4 +685,20 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+void age_stuff(void) {
+  acquire(&ptable.lock);
+  for (struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+    if ( (p->state == RUNNABLE) && (p->pid > 2) )
+      p->age++;
+    else
+      p->age=0;
+    if ( (p->priority != 1) && (p->pid > 2) && (p->age >= 80) ) {
+      p->age=0;
+      p->priority--;
+      p->creation_order = ticks;
+    }
+  }
+  release(&ptable.lock);  
 }

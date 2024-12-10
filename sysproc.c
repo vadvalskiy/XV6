@@ -6,7 +6,11 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "proc.h"
-
+#include "spinlock.h"
+extern struct {
+  struct spinlock lock;
+  struct proc proc[NPROC];
+} ptable;
 int
 sys_fork(void)
 {
@@ -88,4 +92,57 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+int
+sys_setburst(void)
+{
+    int burst;
+
+    if(argint(0, &burst) < 0 || burst <= 0)
+        return -1;  // Invalid burst time
+    myproc()->burst_time = burst;
+    return 0;
+}
+
+int
+sys_setconfidence(void)
+{
+    int conf;
+
+    if(argint(0, &conf) < 0 || conf < 0 || conf > 99)
+        return -1;  // Confidence must be in the range 0-99
+    myproc()->confidence = conf;
+    return 0;
+}
+
+int sys_setpriority(void) {
+    int prio;
+    if (argint(0, &prio) < 0 || prio < 1 || prio > 3)
+        return -1;
+    myproc()->priority = prio;
+    return 0;
+}
+
+int sys_printinfo(void)
+{
+  acquire(&ptable.lock);
+  struct proc *p;
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++) {
+      if (p->pid > 0) {
+        static char* state_names[] = { [UNUSED] "UNUSED" , [EMBRYO] "EMBRYO" , [SLEEPING] "SLEEPING" , [RUNNABLE] "RUNNABLE" , [RUNNING] "RUNNING" , [ZOMBIE] "ZOMBIE"};
+        cprintf("----------------------\n");
+        cprintf("name: %s - ",p->name);
+        cprintf("pid: %d - ",p->pid);
+        cprintf("state: %s - ",state_names[p->state]);
+        cprintf("burst time: %d - ",p->burst_time);
+        cprintf("confidence: %d - ",p->confidence);
+        cprintf("create time: %d - ",p->creation_order);
+        cprintf("priority: %d - ",p->priority);
+        cprintf("last run time: %d\n",p->last_run_time);
+        cprintf("-----------------------\n");
+      }
+  }
+  release(&ptable.lock);
+  return 0;
 }

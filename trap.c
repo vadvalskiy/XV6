@@ -33,44 +33,58 @@ idtinit(void)
 }
 
 //PAGEBREAK: 41
-void
-trap(struct trapframe *tf)
-{
-  if(tf->trapno == T_SYSCALL){
-    if(myproc()->killed)
+// Global variables for priority time quanta
+int priority_time[4];
+int current_priority = 1;  // Start with priority 1
+
+void init_priority_time() {
+  priority_time[1] = 3 * ticks;
+  priority_time[2] = 2 * ticks;
+  priority_time[3] = 1 * ticks;
+}
+
+void trap(struct trapframe *tf) {
+  if (tf->trapno == T_SYSCALL) {
+    if (myproc()->killed)
       exit();
     myproc()->tf = tf;
     syscall();
-    if(myproc()->killed)
+    if (myproc()->killed)
       exit();
     return;
   }
 
-  switch(tf->trapno){
+  switch (tf->trapno) {
   case T_IRQ0 + IRQ_TIMER:
-    if(cpuid() == 0){
+    if (cpuid() == 0) {
       acquire(&tickslock);
       ticks++;
       wakeup(&ticks);
       release(&tickslock);
     }
+
     lapiceoi();
     break;
+
   case T_IRQ0 + IRQ_IDE:
     ideintr();
     lapiceoi();
     break;
-  case T_IRQ0 + IRQ_IDE+1:
+
+  case T_IRQ0 + IRQ_IDE + 1:
     // Bochs generates spurious IDE1 interrupts.
     break;
+
   case T_IRQ0 + IRQ_KBD:
     kbdintr();
     lapiceoi();
     break;
+
   case T_IRQ0 + IRQ_COM1:
     uartintr();
     lapiceoi();
     break;
+
   case T_IRQ0 + 7:
   case T_IRQ0 + IRQ_SPURIOUS:
     cprintf("cpu%d: spurious interrupt at %x:%x\n",
@@ -78,35 +92,47 @@ trap(struct trapframe *tf)
     lapiceoi();
     break;
 
-  //PAGEBREAK: 13
   default:
-    if(myproc() == 0 || (tf->cs&3) == 0){
-      // In kernel, it must be our mistake.
+    if (myproc() == 0 || (tf->cs & 3) == 0) {
       cprintf("unexpected trap %d from cpu %d eip %x (cr2=0x%x)\n",
               tf->trapno, cpuid(), tf->eip, rcr2());
       panic("trap");
     }
-    // In user space, assume process misbehaved.
     cprintf("pid %d %s: trap %d err %d on cpu %d "
             "eip 0x%x addr 0x%x--kill proc\n",
             myproc()->pid, myproc()->name, tf->trapno,
             tf->err, cpuid(), tf->eip, rcr2());
     myproc()->killed = 1;
   }
+  // Aging and queue adjustment
+  age_stuff();
+  // Handle priority-based time-slicing
+    if (myproc() && myproc()->state == RUNNING && tf->trapno == T_IRQ0 + IRQ_TIMER) {
+      priority_time[current_priority] -= 1;
 
-  // Force process exit if it has been killed and is in user space.
-  // (If it is still executing in the kernel, let it keep running
-  // until it gets to the regular system call return.)
-  if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)
+      if (priority_time[current_priority] <= 0) {
+        // Reset time for the current priority
+        if (current_priority == 1) {
+          priority_time[1] = 30;
+        } else if (current_priority == 2) {
+          priority_time[2] = 20;
+        } else if (current_priority == 3) {
+          priority_time[3] = 10;
+        }
+
+        // Move to the next priority
+        current_priority++;
+        if (current_priority > 3) {
+          current_priority = 1;  // Wrap around
+        }
+
+        yield();  // Yield the CPU
+      }
+    }
+    
+  if (myproc() && myproc()->killed && (tf->cs & 3) == DPL_USER)
     exit();
 
-  // Force process to give up CPU on clock tick.
-  // If interrupts were on while locks held, would need to check nlock.
-  if(myproc() && myproc()->state == RUNNING &&
-     tf->trapno == T_IRQ0+IRQ_TIMER)
-    yield();
-
-  // Check if the process has been killed since we yielded
-  if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)
+  if (myproc() && myproc()->killed && (tf->cs & 3) == DPL_USER)
     exit();
 }
