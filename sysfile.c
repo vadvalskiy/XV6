@@ -15,6 +15,8 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+// #include "memlayout.h"
+// #include "mmap.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -441,4 +443,134 @@ sys_pipe(void)
   fd[0] = fd0;
   fd[1] = fd1;
   return 0;
+}
+
+//writing this here agin because including memlayout.h is giving me a loooooot of errors.
+#define KERNBASE 0x80000000 
+#define V2P(a) (((uint) (a)) - KERNBASE)
+#define P2V(a) ((void *)(((char *) (a)) + KERNBASE))
+
+
+//planning to change the permissions here, no changes made yet.
+static pte_t *
+mmap_walkpgdir(pde_t *pgdir, const void *va, int alloc)
+{
+  pde_t *pde;
+  pte_t *pgtab;
+
+  pde = &pgdir[PDX(va)];
+  if(*pde & PTE_P){
+    pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
+  } else {
+    if(!alloc || (pgtab = (pte_t*)kalloc()) == 0)
+      return 0;
+    // Make sure all those PTE_P bits are zero.
+    memset(pgtab, 0, PGSIZE);
+    // The permissions here are overly generous, but they can
+    // be further restricted by the permissions in the page table
+    // entries, if necessary.
+    *pde = V2P(pgtab) | PTE_P | PTE_W | PTE_U;
+  }
+  return &pgtab[PTX(va)];
+}
+
+
+
+void* sys_mmap(void) {
+  // void *mmap(void addr[.length], size_t length, int prot, int flags,
+  //   int fd, off_t offset);
+  struct proc *p = myproc(); 
+    if (p->total_mmaps >= 15) {
+        return (void*) -1; // mapping limit reached..
+    }
+
+  void* addr;
+  int len ,prot,flags,offset,fd;
+  if (argint(0, (int *)&addr) < 0 || argint(1, &len) < 0 || argint(2, &prot) < 0 || argint(3, &flags) < 0 || argint(4, &fd) < 0 ||argint(5, &offset) < 0 ) {
+    return (void *) -1;
+  }
+
+  cprintf("address : %p\n",addr);
+  cprintf("len : %d\n",len);
+  cprintf("protection : %d\n", prot);
+  cprintf("flags : %d\n",flags);
+  cprintf("file descriptor : %d\n",fd);
+  cprintf("offset : %d\n",offset);
+  cprintf("mmap\n");
+
+  //put all this is mmap data
+
+  // struct mmapdata *newmapping;
+  // newmapping->addr = addr;
+  // newmapping->length = len;
+  // newmapping->prot = prot;
+  // newmapping->flags = flags;
+  // newmapping->offset = offset;
+  // newmapping->fd = fd;
+
+  //but how to make this permanent, newmapping is a tempvar!
+  //proc chya allmaps chi next entry
+  p->allmmaps[p->total_mmaps].addr = addr;
+  p->allmmaps[p->total_mmaps].length = len;
+  p->allmmaps[p->total_mmaps].prot = prot;
+  p->allmmaps[p->total_mmaps].flags = flags;
+  p->allmmaps[p->total_mmaps].offset = offset;
+  p->allmmaps[p->total_mmaps].fd = fd;  
+  p->total_mmaps++; //but where should i initailise this to 0??;
+  // @srushti, initialiised in alloc proc, this is where process is initiallised
+
+  //now 2 possible cases for a given address
+  //1. it is not null
+  void* new_addr = (void*)0;
+  if(addr) {new_addr = (void*) PGROUNDUP((int) addr);}
+  //2. Address is NULL
+  else{
+
+    //@Srushti it is my understanding that kernbase is the topmost boundary of the user space; 
+    //kernel space is from kerbase to phystop, so for this process i am cheking first if there is a hole
+    //from 0 to p->sz for my null address, else i am using sbrk to add memory , 
+    //pls chk this
+    //sbrk allocates memory in the heap, so i am just thinking of adding a lenght % pagesize * no. of pages to the p->sz (page size)
+    //and then allocating it, not sure how yet :)
+
+    uint temp_addr = PGROUNDUP(0x00000000);  
+
+    while (temp_addr + len < p->sz) {  // Stay below p->sz
+        pte_t *pte = mmap_walkpgdir(p->pgdir, (char*)temp_addr, 0);
+
+        if (pte == 0 || (*pte & PTE_P) == 0) {  // If page is free
+          new_addr = (void*)temp_addr;
+          break;
+        }
+
+        temp_addr += PGSIZE;  // Move to next page
+    }
+
+    if(temp_addr > p->sz){
+      //no hole found, so increase the size:->
+      p->sz += ((len / PGSIZE) + 1 )*PGSIZE;
+
+      pte_t *pte = mmap_walkpgdir(p->pgdir, (char*)temp_addr, 0);
+
+      if (pte == 0 || (*pte & PTE_P) == 0) {  // If page is free
+        new_addr = (void*)temp_addr;
+      }
+      //should probably get some memory now, but what if it overlaps and deletes something??
+
+    }
+
+  }
+  if(allocuvm(p->pgdir, (uint)new_addr, (uint)new_addr + len) == 0){  //returns zero when out of
+    cprintf("allocuvm in mmap has failed."); 
+    return (void*) -1;
+  }
+
+  return (void*) 0;
+}
+
+
+
+
+void sys_munmap(void) {
+  cprintf("munmap\n");
 }

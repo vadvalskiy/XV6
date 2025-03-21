@@ -1,0 +1,258 @@
+diff --git a/Makefile b/Makefile
+index 09d790c..a76f857 100644
+--- a/Makefile
++++ b/Makefile
+@@ -181,6 +181,7 @@ UPROGS=\
+ 	_usertests\
+ 	_wc\
+ 	_zombie\
++	_trymmap\
+ 
+ fs.img: mkfs README $(UPROGS)
+ 	./mkfs fs.img README $(UPROGS)
+diff --git a/aboutmmap.txt b/aboutmmap.txt
+new file mode 100644
+index 0000000..be3c994
+--- /dev/null
++++ b/aboutmmap.txt
+@@ -0,0 +1,5 @@
++ #include <sys/mman.h>
++
++       void *mmap(void addr[.length], size_t length, int prot, int flags,
++                  int fd, off_t offset);
++       int munmap(void addr[.length], size_t length);
+diff --git a/diff.txt b/diff.txt
+new file mode 100644
+index 0000000..e69de29
+diff --git a/mmap.h b/mmap.h
+new file mode 100644
+index 0000000..156feb1
+--- /dev/null
++++ b/mmap.h
+@@ -0,0 +1,45 @@
++// The prot argument describes the desired memory protection of the
++// mapping (and must not conflict with the open mode of the file).
++
++//hash defines should be unique for bitwise operations!!!
++
++#define PROT_EXEC 0x1
++// Pages may be executed.
++
++#define PROT_READ 0x2 
++// Pages may be read.
++
++#define PROT_WRITE 0x4
++// Pages may be written.
++
++#define PROT_NONE 0x0
++// Pages may not be accessed.
++
++
++// The flags argument determines whether updates to the mapping are
++//        visible to other processes mapping the same region, and whether
++//        updates are carried through to the underlying file. 
++
++#define MAP_SHARED   0x01 
++// Updates to the mapping are visible to other processes mapping the same region
++
++#define MAP_PRIVATE 0x02 
++// Create a private copy-on-write mapping.
++
++#define MAP_ANONYMOUS  = 0x20 //(0b100000
++// The mapping is not backed by any file; its contents are initialized to zero.
++
++
++// prot = PROT_READ | PROT_WRITE = 0x3
++// flags = MAP_ANON | MAP_SHARED = 0x21
++// These are just integer bitmasks, not arrays.
++
++struct mmapdata
++{
++    void *addr;   
++    int length;   
++    int prot;    
++    int flags;    
++    int fd;      
++    int offset;
++};
+diff --git a/proc.h b/proc.h
+index 1647114..03c5ec6 100644
+--- a/proc.h
++++ b/proc.h
+@@ -1,3 +1,5 @@
++#include "mmap.h"
++
+ // Per-CPU state
+ struct cpu {
+   uchar apicid;                // Local APIC ID
+@@ -34,6 +36,8 @@ struct context {
+ 
+ enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+ 
++// Each process might mmap() different regions of memory, so we need a per-process list to keep track of them
++
+ // Per-process state
+ struct proc {
+   uint sz;                     // Size of process memory (bytes)
+@@ -49,6 +53,8 @@ struct proc {
+   struct file *ofile[NOFILE];  // Open files
+   struct inode *cwd;           // Current directory
+   char name[16];               // Process name (debugging)
++  struct mmapdata allmmaps[15]; // List of allocated mmap regions
++  int total_mmaps;              // Total memory mappings
+ };
+ 
+ // Process memory is laid out contiguously, low addresses first:
+diff --git a/syscall.c b/syscall.c
+index ee85261..05bb641 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -103,6 +103,8 @@ extern int sys_unlink(void);
+ extern int sys_wait(void);
+ extern int sys_write(void);
+ extern int sys_uptime(void);
++extern int sys_mmap(void);
++extern int sys_munmap(void);
+ 
+ static int (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -126,6 +128,8 @@ static int (*syscalls[])(void) = {
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++[SYS_mmap]    sys_mmap,
++[SYS_munmap]  sys_munmap,
+ };
+ 
+ void
+diff --git a/syscall.h b/syscall.h
+index bc5f356..e7b18d6 100644
+--- a/syscall.h
++++ b/syscall.h
+@@ -20,3 +20,5 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_mmap   22
++#define SYS_munmap 23
+diff --git a/sysfile.c b/sysfile.c
+index bfe61b7..a17c757 100644
+--- a/sysfile.c
++++ b/sysfile.c
+@@ -15,6 +15,7 @@
+ #include "sleeplock.h"
+ #include "file.h"
+ #include "fcntl.h"
++// #include "mmap.h"
+ 
+ // Fetch the nth word-sized system call argument as a file descriptor
+ // and return both the descriptor and the corresponding struct file.
+@@ -442,3 +443,51 @@ sys_pipe(void)
+   fd[1] = fd1;
+   return 0;
+ }
++
++void* sys_mmap(void) {
++  // void *mmap(void addr[.length], size_t length, int prot, int flags,
++  //   int fd, off_t offset);
++  struct proc *p = myproc(); 
++    if (p->total_mmaps >= 15) {
++        return (void*) -1; // mapping limit reached..
++    }
++
++  void* addr;
++  int len ,prot,flags,offset,fd;
++  if (argint(0, (int *)&addr) < 0 || argint(1, &len) < 0 || argint(2, &prot) < 0 || argint(3, &flags) < 0 || argint(4, &fd) < 0 ||argint(5, &offset) < 0 ) {
++    return (void *) -1;
++  }
++
++  cprintf("address : %p\n",addr);
++  cprintf("len : %d\n",len);
++  cprintf("protection : %d\n", prot);
++  cprintf("flags : %d\n",flags);
++  cprintf("file descriptor : %d\n",fd);
++  cprintf("offset : %d\n",offset);
++  cprintf("mmap\n");
++
++  //put all this is mmap data
++
++  // struct mmapdata *newmapping;
++  // newmapping->addr = addr;
++  // newmapping->length = len;
++  // newmapping->prot = prot;
++  // newmapping->flags = flags;
++  // newmapping->offset = offset;
++  // newmapping->fd = fd;
++
++  //but how to make this permanent, newmapping is a tempvar!
++  //proc chya allmaps chi next entry
++  p->allmmaps[p->total_mmaps].addr = addr;
++  p->allmmaps[p->total_mmaps].length = len;
++  p->allmmaps[p->total_mmaps].prot = prot;
++  p->allmmaps[p->total_mmaps].flags = flags;
++  p->allmmaps[p->total_mmaps].offset = offset;
++  p->allmmaps[p->total_mmaps].fd = fd;  
++
++  return (void*) 0;
++}
++
++void sys_munmap(void) {
++  cprintf("munmap\n");
++}
+diff --git a/trials/mmap.c b/trials/mmap.c
+new file mode 100644
+index 0000000..3a28574
+
+diff --git a/trymmap.c b/trymmap.c
+new file mode 100644
+index 0000000..13144d4
+--- /dev/null
++++ b/trymmap.c
+@@ -0,0 +1,23 @@
++// void *mmap(void *addr, size_t length, int prot, int flags,int fd, off_t offset);
++#include "types.h"
++#include "stat.h"
++#include "user.h"
++#include "fs.h"
++
++int main(int argc, char *argv[]){
++    void *addr = (void *) 0x400000;  // Example address
++    int length = 4096;               // 4 KB
++    int prot = 1;                    // Example: PROT_READ
++    int flags = 2;                    // Example: MAP_PRIVATE
++    int fd = -1;                      // No file (anonymous mapping)
++    int offset = 0;                   // Offset in file
++
++    void *result = mmap(addr, length, prot, flags, fd, offset);
++    if (result == (void *) -1) {
++        printf(1,"mmap failed\n");
++    } else {
++        printf(1,"mmap returned: %p\n", result);
++    }
++    munmap();
++    exit();
++}
+\ No newline at end of file
+diff --git a/user.h b/user.h
+index 4f99c52..98d4be1 100644
+--- a/user.h
++++ b/user.h
+@@ -23,6 +23,8 @@ int getpid(void);
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
++void* mmap(void *addr, int length, int prot, int flags, int fd, int offset);
++void munmap(void);
+ 
+ // ulib.c
+ int stat(const char*, struct stat*);
+diff --git a/usys.S b/usys.S
+index 8bfd8a1..9ac03b2 100644
+--- a/usys.S
++++ b/usys.S
+@@ -29,3 +29,5 @@ SYSCALL(getpid)
+ SYSCALL(sbrk)
+ SYSCALL(sleep)
+ SYSCALL(uptime)
++SYSCALL(mmap)
++SYSCALL(munmap)

@@ -1,3 +1,5 @@
+#include "mmap.h"
+
 // Per-CPU state
 struct cpu {
   uchar apicid;                // Local APIC ID
@@ -34,6 +36,8 @@ struct context {
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+// Each process might mmap() different regions of memory, so we need a per-process list to keep track of them
+
 // Per-process state
 struct proc {
   uint sz;                     // Size of process memory (bytes)
@@ -49,6 +53,8 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+  struct mmapdata allmmaps[15]; // List of allocated mmap regions
+  int total_mmaps;              // Total memory mappings
 };
 
 // Process memory is laid out contiguously, low addresses first:
