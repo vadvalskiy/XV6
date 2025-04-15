@@ -14,6 +14,11 @@ extern uint vectors[];  // in vectors.S: array of 256 entry pointers
 struct spinlock tickslock;
 uint ticks;
 
+// --- p2_25s start ---
+// Get variants declared in proc.c
+extern const int prio_to_weight[];
+// --- p2_25s end ---
+
 void
 tvinit(void)
 {
@@ -100,11 +105,31 @@ trap(struct trapframe *tf)
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)
     exit();
 
+  // --- p2_25s start --- (fix the timer inturrupt)
   // Force process to give up CPU on clock tick.
   // If interrupts were on while locks held, would need to check nlock.
   if(myproc() && myproc()->state == RUNNING &&
-     tf->trapno == T_IRQ0+IRQ_TIMER)
-    yield();
+     tf->trapno == T_IRQ0+IRQ_TIMER){
+    // If there is not time over, 
+    // decrease time slice by 1, increase runtime by 1,
+    // increase vruntime by (1024 / weight of current process)
+    myproc()->timeslice -= 1;
+    myproc()->runtime += 1000;
+    myproc()->vruntime += (1024 * 1000 / prio_to_weight[myproc()->nice_value]);
+
+    if((ticks==5488)&&myproc()) {
+      cprintf("\n\n");
+      ps(0);
+      cprintf("\n\n");
+      cprintf("%d\n\n", myproc()->timeslice);
+    }
+    
+    if(myproc()->timeslice <= 0){
+      myproc()->timeslice = 0;
+      yield();
+    }
+  }
+  // --- p2_25s end --- 
 
   // Check if the process has been killed since we yielded
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)
