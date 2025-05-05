@@ -37,3 +37,19 @@ void* memset(void*, int, uint);
 void* malloc(uint);
 void free(void*);
 int atoi(const char*);
+
+// Add at the end of system call declarations
+int clone(void (*start_routine)(void*,void*), void *, void *, void *);
+int join(void**);
+
+// Thread library definitions
+typedef struct __lock_t {
+  uint flag;
+} lock_t;
+
+// Thread library function declarations
+int thread_create(void (*start_routine)(void *, void *), void *arg1, void *arg2);
+int thread_join();
+int lock_init(lock_t *lock);
+void lock_acquire(lock_t *lock);
+void lock_release(lock_t *lock);

@@ -4,6 +4,8 @@
 #include "user.h"
 #include "x86.h"
 
+#define PGSIZE 4096
+
 char*
 strcpy(char *s, const char *t)
 {
@@ -103,4 +105,77 @@ memmove(void *vdst, const void *vsrc, int n)
   while(n-- > 0)
     *dst++ = *src++;
   return vdst;
+}
+
+int thread_create(void (*start_routine)(void *, void *), void* arg1, void* arg2)
+{
+  // Validate the function pointer
+  if (start_routine == 0) {
+    printf(2, "Error: Invalid function pointer provided to thread_create\n");
+    return -1;
+  }
+
+  // Allocate memory for thread stack
+  void* stack = malloc(PGSIZE);
+
+  // Check if memory allocation was successful
+  if (stack == 0) {
+    printf(2, "Error: Failed to allocate memory for thread stack\n");
+    return -1;
+  }
+
+  // Initialize stack memory to zeros
+  memset(stack, 0, PGSIZE);
+
+  // Create thread using clone system call
+  int pid = clone(start_routine, arg1, arg2, stack);
+
+  // If thread creation failed, free the allocated stack
+  if (pid < 0) {
+    free(stack);
+    return -1;
+  }
+
+  return pid;
+}
+
+int thread_join()
+{
+  void* stack_ptr = 0;
+  int thread_id;
+
+  // Wait for a thread to exit and get its ID
+  thread_id = join(&stack_ptr);
+
+  // If join was successful and we got a valid stack pointer
+  if (thread_id > 0 && stack_ptr != 0) {
+    // Free the thread's stack memory
+    free(stack_ptr);
+  }
+
+  return thread_id;
+}
+
+int lock_init(lock_t *lock)
+{
+  if (lock == 0) {
+    return -1;
+  }
+
+  lock->flag = 0;
+  return 0;
+}
+
+void lock_acquire(lock_t *lock)
+{
+  // Simple spin lock implementation
+  while (xchg(&lock->flag, 1) != 0) {
+    // Just keep spinning
+    // No yield() call as it's not available in user space
+  }
+}
+
+void lock_release(lock_t *lock)
+{
+  lock->flag = 0;
 }
