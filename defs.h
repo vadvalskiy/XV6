@@ -120,6 +120,11 @@ void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
 void            yield(void);
+int             thread_create(void* (*)(void), void*, int, void (*)(void));
+void            thread_exit(void*);
+int             thread_join(int, void**);
+int             gettid();
+void            changecwd(struct inode *ip);
 
 // swtch.S
 void            swtch(struct context**, struct context*);

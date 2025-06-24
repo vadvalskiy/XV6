@@ -389,7 +389,7 @@ sys_chdir(void)
   iunlock(ip);
   iput(curproc->cwd);
   end_op();
-  curproc->cwd = ip;
+  changecwd(ip);
   return 0;
 }
 

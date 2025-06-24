@@ -1,12 +1,14 @@
 #include "syscall.h"
 #include "traps.h"
 
-#define SYSCALL(name) \
-  .globl name; \
-  name: \
-    movl $SYS_ ## name, %eax; \
+#define SYSCALL_SPECIFY_FUNCTION_NAME(funcname, syscallname) \
+  .globl funcname; \
+  funcname: \
+    movl $SYS_ ## syscallname, %eax; \
     int $T_SYSCALL; \
     ret
+
+#define SYSCALL(name) SYSCALL_SPECIFY_FUNCTION_NAME(name, name)
 
 SYSCALL(fork)
 SYSCALL(exit)
@@ -29,3 +31,7 @@ SYSCALL(getpid)
 SYSCALL(sbrk)
 SYSCALL(sleep)
 SYSCALL(uptime)
+SYSCALL(thread_exit)
+SYSCALL(thread_join)
+SYSCALL(gettid)
+SYSCALL_SPECIFY_FUNCTION_NAME(thread_create_sys, thread_create)

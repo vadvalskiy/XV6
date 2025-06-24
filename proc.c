@@ -14,7 +14,6 @@ struct {
 
 static struct proc *initproc;
 
-int nextpid = 1;
 extern void forkret(void);
 extern void trapret(void);
 
@@ -65,31 +64,96 @@ myproc(void) {
   return p;
 }
 
+int
+getnextpid(void)
+{
+  static int nextpid = MIN_PID;
+
+  if(nextpid == MAX_PID)
+    nextpid = MIN_PID;
+
+  return nextpid++;
+}
+
+int
+getnexttid(void)
+{
+  static int nexttid = MIN_TID;
+
+  if(nexttid == MAX_TID)
+    nexttid = MIN_TID;
+
+  return nexttid++;
+}
+
+static struct proc*
+findavailableproc(int isthread)
+{
+  struct proc *p, *availableproc = 0;
+  int i;
+  int availablepid;
+  int availabletid = 0;
+
+  if(isthread)
+    availablepid = myproc()->pid;
+  else
+    availablepid = 0;
+
+  acquire(&ptable.lock);
+
+  // loop until we find available pid&tid.
+  // logically it should take less than NPROC loops because NPROC < MAX_PID/TID, if it doesn't treat it as an error
+  for(i = 0; i < NPROC && (!availablepid || !availabletid); i++){
+    availabletid = getnexttid();
+    if(!isthread && !availablepid)
+      availablepid = getnextpid();
+
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->state != UNUSED){
+        if(availabletid == p->tid)
+          availabletid = 0;
+        if(!isthread && availablepid == p->pid)
+          availablepid = 0;
+      } else if(!availableproc){
+        availableproc = p;
+      }
+    }
+
+    // if not found an unused proc in the first loop, no need to keep looking
+    if(!availableproc)
+      goto error;
+  }
+
+  if(!availablepid || !availabletid)
+    goto error;
+
+  availableproc->state = EMBRYO;
+  availableproc->pid = availablepid;
+  availableproc->tid = availabletid;
+
+  release(&ptable.lock);
+
+  return availableproc;
+
+error:
+  release(&ptable.lock);
+  return 0;
+}
+
 //PAGEBREAK: 32
 // Look in the process table for an UNUSED proc.
 // If found, change state to EMBRYO and initialize
 // state required to run in the kernel.
 // Otherwise return 0.
 static struct proc*
-allocproc(void)
+newproc(int isthread)
 {
   struct proc *p;
   char *sp;
 
-  acquire(&ptable.lock);
-
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == UNUSED)
-      goto found;
-
-  release(&ptable.lock);
-  return 0;
-
-found:
-  p->state = EMBRYO;
-  p->pid = nextpid++;
-
-  release(&ptable.lock);
+  p = findavailableproc(isthread);
+  if(p == 0)
+    return 0;
 
   // Allocate kernel stack.
   if((p->kstack = kalloc()) == 0){
@@ -113,6 +177,12 @@ found:
   p->context->eip = (uint)forkret;
 
   return p;
+}
+
+static struct proc*
+allocproc(void)
+{
+  return newproc(0);
 }
 
 //PAGEBREAK: 32
@@ -174,51 +244,98 @@ growproc(int n)
   return 0;
 }
 
+int
+clone(int isthread, void* (*func) (void), void *tstack, int stacksize, void (*fallbackfunc) (void))
+{
+  int i;
+  struct proc *np;
+  struct proc *curproc = myproc();
+
+  // Allocate process.
+  if((np = newproc(isthread)) == 0){
+    return -1;
+  }
+
+  // Copy process state from proc.
+  if(isthread)
+    np->pgdir = curproc->pgdir;
+  else{
+    if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
+      kfree(np->kstack);
+      np->kstack = 0;
+      np->state = UNUSED;
+      return -1;
+    }
+  }
+  np->sz = curproc->sz;
+  *np->tf = *curproc->tf;
+  
+  if(isthread){
+    np->parent = curproc->parent;
+
+    // Set it to jump to `func` when returing to the userspace.
+    np->tf->eip = (uint)func;
+    np->tf->esp = (uint)tstack + stacksize;
+
+    np->tf->esp -= sizeof(uint);
+    copyout(np->pgdir, np->tf->esp, &fallbackfunc, sizeof(uint));
+
+    // The thread is 
+  }
+  else{
+    np->parent = curproc;
+
+    // Clear %eax so that fork returns 0 in the child.
+    np->tf->eax = 0;
+  }
+
+  np->joined = 0;
+
+  for(i = 0; i < NOFILE; i++)
+    if(curproc->ofile[i]){
+      if(isthread)
+        np->ofile[i] = curproc->ofile[i];
+      else
+        np->ofile[i] = filedup(curproc->ofile[i]);
+    } else{
+      np->ofile[i] = 0;
+    }
+
+  if(isthread)
+    np->cwd = curproc->cwd;
+  else
+    np->cwd = idup(curproc->cwd);
+
+  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+
+  acquire(&ptable.lock);
+
+  np->state = RUNNABLE;
+  
+  release(&ptable.lock);
+  
+  if (isthread)
+    return np->tid;
+
+  return np->pid;
+}
+
 // Create a new process copying p as the parent.
 // Sets up stack to return as if from system call.
 // Caller must set state of returned proc to RUNNABLE.
 int
 fork(void)
 {
-  int i, pid;
-  struct proc *np;
-  struct proc *curproc = myproc();
+  return clone(0, 0, 0, 0, 0);
+}
 
-  // Allocate process.
-  if((np = allocproc()) == 0){
+int
+thread_create(void* (*func) (void), void *tstack, int stacksize, void (*fallbackfunc) (void))
+{
+  if(!func || !tstack || !stacksize || !fallbackfunc)
     return -1;
-  }
 
-  // Copy process state from proc.
-  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
-    kfree(np->kstack);
-    np->kstack = 0;
-    np->state = UNUSED;
-    return -1;
-  }
-  np->sz = curproc->sz;
-  np->parent = curproc;
-  *np->tf = *curproc->tf;
-
-  // Clear %eax so that fork returns 0 in the child.
-  np->tf->eax = 0;
-
-  for(i = 0; i < NOFILE; i++)
-    if(curproc->ofile[i])
-      np->ofile[i] = filedup(curproc->ofile[i]);
-  np->cwd = idup(curproc->cwd);
-
-  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
-
-  pid = np->pid;
-
-  acquire(&ptable.lock);
-
-  np->state = RUNNABLE;
-
-  release(&ptable.lock);
-
-  return pid;
+  return clone(1, func, tstack, stacksize, fallbackfunc);
 }
 
 // Exit the current process.  Does not return.
@@ -245,7 +362,7 @@ exit(void)
   begin_op();
   iput(curproc->cwd);
   end_op();
-  curproc->cwd = 0;
+  changecwd(0);
 
   acquire(&ptable.lock);
 
@@ -254,7 +371,9 @@ exit(void)
 
   // Pass abandoned children to init.
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->parent == curproc){
+    if(p->pid == curproc->pid){
+      p->state = ZOMBIE;
+    } else if(p->parent->pid == curproc->pid){
       p->parent = initproc;
       if(p->state == ZOMBIE)
         wakeup1(initproc);
@@ -262,9 +381,62 @@ exit(void)
   }
 
   // Jump into the scheduler, never to return.
-  curproc->state = ZOMBIE;
   sched();
   panic("zombie exit");
+}
+
+void thread_exit(void *retval)
+{
+  struct proc *curproc = myproc();
+  struct proc *p;
+  int islastofpid = 1;
+
+  if(curproc == initproc)
+    panic("init exiting");
+
+  acquire(&ptable.lock);
+
+  // Check if this is the last thread of the group
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p != curproc && p->pid == curproc->pid){
+      islastofpid = 0;
+      break;
+    }
+  }
+
+  release(&ptable.lock);
+
+  if(islastofpid){
+    exit();
+    // doesn't reach here
+  }
+
+  curproc->retval = retval;
+
+  acquire(&ptable.lock);
+
+  // Another thread might be sleeping in thread_join().
+  if(curproc->joined)
+    wakeup1(curproc->joined);
+
+  // Jump into the scheduler, never to return.
+  curproc->state = THREAD_ZOMBIE;
+  sched();
+  panic("zombie exit");
+}
+
+void
+freeproc(struct proc *p)
+{
+  kfree(p->kstack);
+  p->kstack = 0;
+  p->pid = 0;
+  p->tid = 0;
+  p->joined = 0;
+  p->parent = 0;
+  p->name[0] = 0;
+  p->killed = 0;
+  p->state = UNUSED;
 }
 
 // Wait for a child process to exit and return its pid.
@@ -273,7 +445,7 @@ int
 wait(void)
 {
   struct proc *p;
-  int havekids, pid;
+  int havekids, pid = 0;
   struct proc *curproc = myproc();
   
   acquire(&ptable.lock);
@@ -281,23 +453,24 @@ wait(void)
     // Scan through table looking for exited children.
     havekids = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->parent != curproc)
+      // If we didn't find a pid yet, skip if p is not a child of curproc. If we already found a child pid, skip all others, even if they are children, in order for `wait` to be a per-pid call.
+      if((!pid && p->parent->pid != curproc->pid) || (pid && p->pid != pid))
         continue;
       havekids = 1;
       if(p->state == ZOMBIE){
         // Found one.
-        pid = p->pid;
-        kfree(p->kstack);
-        p->kstack = 0;
-        freevm(p->pgdir);
-        p->pid = 0;
-        p->parent = 0;
-        p->name[0] = 0;
-        p->killed = 0;
-        p->state = UNUSED;
-        release(&ptable.lock);
-        return pid;
+        // We need to continue to search for other procs with the same pid (aka threads), so if this is the first time free the adress space as it is shared across threads.
+        if(!pid){
+          pid = p->pid;
+          freevm(p->pgdir);
+        }
+        freeproc(p);
       }
+    }
+
+    if(pid){
+      release(&ptable.lock);
+      return pid;
     }
 
     // No point waiting if we don't have any children.
@@ -309,6 +482,65 @@ wait(void)
     // Wait for children to exit.  (See wakeup1 call in proc_exit.)
     sleep(curproc, &ptable.lock);  //DOC: wait-sleep
   }
+}
+
+int
+thread_join(int tid, void **retval)
+{
+  struct proc *p;
+  int foundthread = 0;
+  struct proc *curproc = myproc();
+
+  acquire(&ptable.lock);
+  for(;;){
+    // Scan through table looking for 
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->tid != tid)
+        continue;
+      
+      if(p->pid != curproc->pid){
+        // The calling process tried to join a thread that is not part of his "group" 
+        release(&ptable.lock);
+        return -1;
+      }
+
+      if(!foundthread){
+        if(p->joined){
+          // The target thread is already joined
+          release(&ptable.lock);
+          return -2;
+        }
+        
+        p->joined = curproc;
+      }
+      
+      foundthread = 1;
+      if(p->state == THREAD_ZOMBIE){
+        // Found one.
+        if(retval)
+          *retval = p->retval;
+        freeproc(p);
+        release(&ptable.lock);
+        return tid;
+      }
+    }
+    
+    // No point waiting if the thread doesn't exist.
+    if(!foundthread){
+      // If we reached here then we didn't set joined to us, so no need to clean it
+      release(&ptable.lock);
+      return -1;
+    }
+    
+    // Wait for the thread to exit.  (See wakeup1 call in exit.)
+    sleep(curproc, &ptable.lock);  //DOC: wait-sleep
+  }
+}
+
+int
+gettid()
+{
+  return myproc()->tid;
 }
 
 //PAGEBREAK: 42
@@ -480,19 +712,22 @@ int
 kill(int pid)
 {
   struct proc *p;
+  int found = 0;
 
   acquire(&ptable.lock);
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     if(p->pid == pid){
+      found = 1;
       p->killed = 1;
       // Wake process from sleep if necessary.
       if(p->state == SLEEPING)
         p->state = RUNNABLE;
-      release(&ptable.lock);
-      return 0;
     }
   }
   release(&ptable.lock);
+
+  if(found)
+    return 0;
   return -1;
 }
 
@@ -531,4 +766,21 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+// Sets all the cwd of all processes part of the current process's group.
+// Assumes that ptable is not already locked by us.
+void
+changecwd(struct inode *ip)
+{
+  struct proc *p;
+  struct proc *curproc = myproc();
+
+  acquire(&ptable.lock);
+
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    if(p->pid == curproc->pid)
+      p->cwd = ip;
+
+  release(&ptable.lock);
 }

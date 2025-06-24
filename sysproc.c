@@ -89,3 +89,48 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+int
+sys_thread_create(void)
+{
+  void* (*func) (void);
+  void *tstack;
+  int stacksize;
+  void (*fallbackfunc) (void);
+
+  if(argptr(0, (void*)&func, sizeof(void*)) < 0 || argptr(1, (void*)&tstack, sizeof(void*)) < 0 || argint(2, &stacksize) < 0 || argptr(3, (void*)&fallbackfunc, sizeof(void*)) < 0)
+    return -1;
+
+  return thread_create(func, tstack, stacksize, fallbackfunc);
+}
+
+int
+sys_thread_exit(void)
+{
+  void *ret;
+
+  if(argptr(0, (void*)&ret, sizeof(void*)) < 0)
+    return -1;
+
+  thread_exit(ret);
+
+  return 0; // not reached
+}
+
+int
+sys_thread_join(void)
+{
+  int tid;
+  void **retval;
+
+  if(argint(0, &tid) < 0 || argptr(1, (void*)&retval, sizeof(void*)) < 0)
+    return -1;
+
+  return thread_join(tid, retval);
+}
+
+int
+sys_gettid(void)
+{
+  return gettid();
+}
