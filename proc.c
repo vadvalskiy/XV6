@@ -398,8 +398,6 @@ void thread_exit(void *retval)
   if(curproc == initproc)
     panic("init exiting");
 
-  // cprintf("%s:%d\n", __FILE__, __LINE__);
-
   acquire(&ptable.lock);
 
   // Check if this is the last thread of the group
@@ -410,16 +408,12 @@ void thread_exit(void *retval)
     }
   }
 
-  // cprintf("%s:%d\n", __FILE__, __LINE__);
-
   release(&ptable.lock);
 
   if(islastofpid){
     exit();
     // doesn't reach here
   }
-
-  // cprintf("%s:%d\n", __FILE__, __LINE__);
 
   curproc->retval = retval;
 
@@ -428,8 +422,6 @@ void thread_exit(void *retval)
   // Another thread might be sleeping in thread_join().
   if(curproc->joined)
     wakeup1(curproc->joined);
-
-  // cprintf("%s:%d\n", __FILE__, __LINE__);
 
   // Jump into the scheduler, never to return.
   curproc->state = THREAD_ZOMBIE;
