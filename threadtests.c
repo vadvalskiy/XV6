@@ -10,8 +10,10 @@
 #define REDQUESTIONMARK "\xE2\x9D\x93"
 #define PARTYPOPPER "\xF0\x9F\x8E\x89"
 
-#define TEST(test_func) (test_func)();                                                                                    \
-                        printf(1, CHECKMARK " " #test_func "\n");
+#define TEST(test_func) do{                                                                                               \
+                          (test_func)();                                                                                  \
+                          printf(1, CHECKMARK " " #test_func "\n");                                                       \
+                        } while(0)
 
 #define ASSERT(cond)    do{                                                                                               \
                           if(!(cond)){                                                                                    \
@@ -25,6 +27,7 @@
  * Definitions for tests
  */
 #define NORMAL_STACK_SIZE 1000
+#define SMALL_STACK_SIZE 64
 #define SECRET_VALUE1 0xdead
 #define SECRET_VALUE2 0xbeef
 #define MESSAGE_FILE "msg.txt"
@@ -42,19 +45,19 @@ int g_tid;
 /**
  * Functions for threads
  */
-void*
+void
 empty(void)
 {
-  return 0;
+  // thread_exit(0);
 }
 
-void*
+void
 loop_forever(void)
 {
   for(;;){}
 }
 
-void*
+void
 return_tid(void)
 {
   int *tid;
@@ -63,45 +66,43 @@ return_tid(void)
 
   *tid = gettid();
 
-  return tid;
+  thread_exit(tid);
 }
 
-void*
+void
 change_secret_from_1_to_2(void)
 {
   ASSERT(g_secret == SECRET_VALUE1);
   g_secret = SECRET_VALUE2;
-
-  return 0;
+  thread_exit(0);
 }
 
-void*
+void
 write_to_global_open_fd(void)
 {
   ASSERT(write(g_fd, MESSAGE, sizeof(MESSAGE)) == sizeof(MESSAGE));
-  return 0;
+  thread_exit(0);
 }
 
-void*
+void
 chdir_to_dir1(void)
 {
   ASSERT(chdir(DIR1) == 0);
-  
-  return 0;
+  thread_exit(0);
 }
 
-void*
+void
 sleep_some_time(void)
 {
-  ASSERT(sleep(60) == 0);  
-  return 0;
+  ASSERT(sleep(60) == 0);
+  thread_exit(0);
 }
 
-void*
+void
 join_tid(void)
 {
   ASSERT(thread_join(g_tid, 0) == g_tid);  
-  return 0;
+  thread_exit(0);
 }
 
 /**
@@ -264,14 +265,16 @@ parent_child_different_tid()
 void
 max_threads(void)
 {
-  char stack[NORMAL_STACK_SIZE];
+  char *stack = malloc(SMALL_STACK_SIZE*NPROC);
   int tids[NPROC];
   int n, tid;
 
-  ASSERT(memset(tids, 0, NPROC));
+  ASSERT(stack);
+
+  ASSERT(memset(tids, 0, sizeof(tids)));
 
   for(n=0; n<NPROC; n++){
-    if((tid = thread_create(empty, stack, sizeof(stack))) < 0)
+    if((tid = thread_create(empty, stack + (n*SMALL_STACK_SIZE), SMALL_STACK_SIZE)) < 0)
       break;
     tids[n] = tid;
   }
@@ -280,6 +283,8 @@ max_threads(void)
 
   for(; n > 0; n--)
     ASSERT(thread_join(tids[n-1], 0) == tids[n-1]);
+
+  free(stack);
 }
 
 void
@@ -312,7 +317,29 @@ chdir_in_thread()
 void
 join_in_two_threads()
 {
+  char stack1[NORMAL_STACK_SIZE];
+  char stack2[NORMAL_STACK_SIZE];
+  int tid;
 
+  ASSERT((g_tid = thread_create(sleep_some_time, stack1, sizeof(stack1))) > 0);
+  ASSERT((tid = thread_create(join_tid, stack2, sizeof(stack2))) > 0);
+
+  // Give the other thread some time to join.
+  ASSERT(sleep(10) == 0);
+
+  ASSERT(thread_join(g_tid, 0) == -2);
+  ASSERT(thread_join(tid, 0) == tid);
+}
+
+void
+join_twice()
+{
+  char stack[NORMAL_STACK_SIZE];
+  int tid;
+
+  ASSERT((tid = thread_create(return_tid, stack, sizeof(stack))) > 0);
+  ASSERT(thread_join(tid, 0) == tid);
+  ASSERT(thread_join(tid, 0) < 0);
 }
 
 int
@@ -331,6 +358,7 @@ main(void)
   TEST(max_threads);
   TEST(chdir_in_thread);
   TEST(join_in_two_threads);
+  TEST(join_twice);
 
   printf(1, PARTYPOPPER " All tests passed " PARTYPOPPER "\n");
 

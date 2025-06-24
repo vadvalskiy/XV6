@@ -93,15 +93,15 @@ sys_uptime(void)
 int
 sys_thread_create(void)
 {
-  void* (*func) (void);
+  void (*func) (void);
   void *tstack;
   int stacksize;
-  void (*fallbackfunc) (void);
+  void (*wrapper) (uint);
 
-  if(argptr(0, (void*)&func, sizeof(void*)) < 0 || argptr(1, (void*)&tstack, sizeof(void*)) < 0 || argint(2, &stacksize) < 0 || argptr(3, (void*)&fallbackfunc, sizeof(void*)) < 0)
+  if(argptr(0, (void*)&func, sizeof(void*)) < 0 || argptr(1, (void*)&tstack, sizeof(void*)) < 0 || argint(2, &stacksize) < 0 || argptr(3, (void*)&wrapper, sizeof(void*)) < 0)
     return -1;
 
-  return thread_create(func, tstack, stacksize, fallbackfunc);
+  return thread_create(func, tstack, stacksize, wrapper);
 }
 
 int

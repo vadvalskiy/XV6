@@ -4,7 +4,7 @@
 #include "user.h"
 #include "x86.h"
 
-int thread_create_sys(void* (*)(void), void*, int, void (*)(void));
+int thread_create_sys(void (*)(void), void*, int, void (*)(uint));
 
 char*
 strcpy(char *s, const char *t)
@@ -107,20 +107,26 @@ memmove(void *vdst, const void *vsrc, int n)
   return vdst;
 }
 
-// This function takes the return register(eax) and uses it to call thread_exit.
 void
-thread_exit_with_return_as_arg()
+thread_function_wrapper(uint func)
 {
-  register void *ret asm ("eax");
-  thread_exit(ret);
+  ((void (*)(void))func)();
+  thread_exit(0);
 }
 
-// A wrapper around the syscall, which specifies thread_exit_with_return_as_arg as the function to run
+// A wrapper around the syscall, which specifies exit as the function to run
 // after func returns.
 int
-thread_create(void* (*func)(void), void *tstack, int stacksize)
+thread_create(void (*func)(void), void *tstack, int stacksize)
 {
-  // memset(tstack, 0, stacksize);
+  int i;
+  if(tstack && stacksize > 0)
+  {
+    // memset(tstack, 0, stacksize);
+    for(i=stacksize-1; i >= 0; i--){
+      *((char*)tstack+i) = stacksize - i;
+    }
+  }
 
-  return thread_create_sys(func, tstack, stacksize, thread_exit_with_return_as_arg);
+  return thread_create_sys(func, tstack, stacksize, thread_function_wrapper);
 }

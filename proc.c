@@ -245,9 +245,10 @@ growproc(int n)
 }
 
 int
-clone(int isthread, void* (*func) (void), void *tstack, int stacksize, void (*fallbackfunc) (void))
+clone(int isthread, void (*func) (void), void *tstack, int stacksize, void (*wrapper) (uint))
 {
   int i;
+  // uint ustack[3];
   struct proc *np;
   struct proc *curproc = myproc();
 
@@ -274,13 +275,15 @@ clone(int isthread, void* (*func) (void), void *tstack, int stacksize, void (*fa
     np->parent = curproc->parent;
 
     // Set it to jump to `func` when returing to the userspace.
-    np->tf->eip = (uint)func;
+    np->tf->eip = (uint)wrapper;
     np->tf->esp = (uint)tstack + stacksize;
 
-    np->tf->esp -= sizeof(uint);
-    copyout(np->pgdir, np->tf->esp, &fallbackfunc, sizeof(uint));
-
-    // The thread is 
+    np->tf->esp -= 4;
+    *(uint*)(np->tf->esp) = (uint)func;
+    np->tf->esp -= 4;
+    *(uint*)(np->tf->esp) = 0xafffffff;
+    // if(copyout(np->pgdir, np->tf->esp, ustack, 8) < 0)
+    //   return -1;
   }
   else{
     np->parent = curproc;
@@ -291,7 +294,7 @@ clone(int isthread, void* (*func) (void), void *tstack, int stacksize, void (*fa
 
   np->joined = 0;
 
-  for(i = 0; i < NOFILE; i++)
+  for(i = 0; i < NOFILE; i++){
     if(curproc->ofile[i]){
       if(isthread)
         np->ofile[i] = curproc->ofile[i];
@@ -300,6 +303,7 @@ clone(int isthread, void* (*func) (void), void *tstack, int stacksize, void (*fa
     } else{
       np->ofile[i] = 0;
     }
+  }
 
   if(isthread)
     np->cwd = curproc->cwd;
@@ -330,12 +334,12 @@ fork(void)
 }
 
 int
-thread_create(void* (*func) (void), void *tstack, int stacksize, void (*fallbackfunc) (void))
+thread_create(void (*func) (void), void *tstack, int stacksize, void (*wrapper) (uint))
 {
-  if(!func || !tstack || !stacksize || !fallbackfunc)
+  if(!func || !tstack || !stacksize || !wrapper)
     return -1;
 
-  return clone(1, func, tstack, stacksize, fallbackfunc);
+  return clone(1, func, tstack, stacksize, wrapper);
 }
 
 // Exit the current process.  Does not return.
@@ -394,6 +398,8 @@ void thread_exit(void *retval)
   if(curproc == initproc)
     panic("init exiting");
 
+  // cprintf("%s:%d\n", __FILE__, __LINE__);
+
   acquire(&ptable.lock);
 
   // Check if this is the last thread of the group
@@ -404,12 +410,16 @@ void thread_exit(void *retval)
     }
   }
 
+  // cprintf("%s:%d\n", __FILE__, __LINE__);
+
   release(&ptable.lock);
 
   if(islastofpid){
     exit();
     // doesn't reach here
   }
+
+  // cprintf("%s:%d\n", __FILE__, __LINE__);
 
   curproc->retval = retval;
 
@@ -418,6 +428,8 @@ void thread_exit(void *retval)
   // Another thread might be sleeping in thread_join().
   if(curproc->joined)
     wakeup1(curproc->joined);
+
+  // cprintf("%s:%d\n", __FILE__, __LINE__);
 
   // Jump into the scheduler, never to return.
   curproc->state = THREAD_ZOMBIE;

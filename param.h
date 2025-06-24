@@ -1,8 +1,8 @@
 #define NPROC        64  // maximum number of processes
 #define MIN_PID       1  // The minimum pid (inclusive)
-#define MAX_PID     512  // The maximum pid (exclusive)
+#define MAX_PID     100  // The maximum pid (exclusive)
 #define MIN_TID       1  // The minumum tid (inclusive)
-#define MAX_TID     512  // The maximum tid (exclusive)
+#define MAX_TID     100  // The maximum tid (exclusive)
 #define KSTACKSIZE 4096  // size of per-process kernel stack
 #define NCPU          8  // maximum number of CPUs
 #define NOFILE       16  // open files per process

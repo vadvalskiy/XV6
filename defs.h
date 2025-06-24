@@ -120,7 +120,7 @@ void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
 void            yield(void);
-int             thread_create(void* (*)(void), void*, int, void (*)(void));
+int             thread_create(void (*)(void), void*, int, void (*)(uint));
 void            thread_exit(void*);
 int             thread_join(int, void**);
 int             gettid();
