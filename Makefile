@@ -181,9 +181,10 @@ UPROGS=\
 	_usertests\
 	_wc\
 	_zombie\
+	_tail\
 
-fs.img: mkfs README $(UPROGS)
-	./mkfs fs.img README $(UPROGS)
+fs.img: mkfs README tail.c $(UPROGS)
+	./mkfs fs.img README tail.c $(UPROGS)
 
 -include *.d
 
