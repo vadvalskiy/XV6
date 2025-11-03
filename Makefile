@@ -93,6 +93,19 @@ ifneq ($(shell $(CC) -dumpspecs 2>/dev/null | grep -e '[^f]nopie'),)
 CFLAGS += -fno-pie -nopie
 endif
 
+# Allocator selection (kernel-only):
+#   make qemu-nox ALLOCATOR=LAZY
+#   make qemu-nox ALLOCATOR=LOCALITY
+ALLOCATOR ?= LAZY
+ifeq ($(ALLOCATOR),LOCALITY)
+CFLAGS += -DALLOCATOR_LOCALITY
+else ifeq ($(ALLOCATOR),LAZY)
+CFLAGS += -DALLOCATOR_LAZY
+else
+# default to LAZY if unspecified or unknown
+CFLAGS += -DALLOCATOR_LAZY
+endif
+
 xv6.img: bootblock kernel
 	dd if=/dev/zero of=xv6.img count=10000
 	dd if=bootblock of=xv6.img conv=notrunc

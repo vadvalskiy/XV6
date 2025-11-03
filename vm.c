@@ -192,6 +192,13 @@ inituvm(pde_t *pgdir, char *init, uint sz)
   memmove(mem, init, sz);
 }
 
+// Helper function to get minimum of two values
+static uint
+MIN(uint a, uint b)
+{
+  return a < b ? a : b;
+}
+
 // Load a program segment into pgdir.  addr must be page-aligned
 // and the pages from addr to addr+sz must already be mapped.
 int
@@ -323,10 +330,20 @@ copyuvm(pde_t *pgdir, uint sz)
   if((d = setupkvm()) == 0)
     return 0;
   for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
-      panic("copyuvm: pte should exist");
-    if(!(*pte & PTE_P))
-      panic("copyuvm: page not present");
+    pte = walkpgdir(pgdir, (void *) i, 0);
+    if(pte == 0 || !(*pte & PTE_P)){
+      // Parent doesn't have this page mapped. Allocate a zeroed page
+      // for the child so copyuvm can succeed when parent has lazy
+      // (on-demand) allocations.
+      if((mem = kalloc()) == 0)
+        goto bad;
+      memset(mem, 0, PGSIZE);
+      if(mappages(d, (void*)i, PGSIZE, V2P(mem), PTE_W|PTE_U) < 0) {
+        kfree(mem);
+        goto bad;
+      }
+      continue;
+    }
     pa = PTE_ADDR(*pte);
     flags = PTE_FLAGS(*pte);
     if((mem = kalloc()) == 0)

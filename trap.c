@@ -90,6 +90,54 @@ trap(struct trapframe *tf)
               tf->trapno, cpuid(), tf->eip, rcr2());
       panic("trap");
     }
+    // In user space, attempt to handle page faults by allocating a page
+    // and mapping it at the faulting address so simple programs that
+    // rely on sbrk/malloc will continue to work. If we can't handle
+    // it here, fall through and kill the process as before.
+#ifdef ALLOCATOR_LOCALITY
+    if(tf->trapno == T_PGFLT){
+      uint fault_addr = rcr2();
+      struct proc *p = myproc();
+      // Only handle faults in user address space and within process size
+      if(p && fault_addr < KERNBASE && fault_addr < p->sz){
+        uint va = PGROUNDDOWN(fault_addr);
+        // Try to allocate three pages starting at the faulting address
+        uint end_va = va + 3*PGSIZE;
+        // Don't allocate past KERNBASE or process size
+        if(end_va > KERNBASE || end_va > p->sz){
+          uint limit = p->sz;
+          if(limit > KERNBASE)
+            limit = KERNBASE;
+          end_va = PGROUNDDOWN(limit);
+        }
+        cprintf("pgfault: pid %d locality alloc addr 0x%x -> pages 0x%x-0x%x\n",
+                p->pid, fault_addr, va, end_va - 1);
+        if(allocuvm(p->pgdir, va, end_va) != 0){
+          cprintf("pgfault: pid %d locality mapped 0x%x-0x%x\n",
+                  p->pid, va, end_va - 1);
+          return;  // Success - mapped up to 3 pages
+        }
+        cprintf("pgfault: pid %d locality alloc failed for 0x%x-0x%x\n",
+                p->pid, va, end_va - 1);
+      }
+    }
+#else  // ALLOCATOR_LAZY
+    if(tf->trapno == T_PGFLT){
+      uint fault_addr = rcr2();
+      struct proc *p = myproc();
+      // Only handle faults in user address space and within process size
+      if(p && fault_addr < KERNBASE && fault_addr < p->sz){
+        uint va = PGROUNDDOWN(fault_addr);
+        cprintf("pgfault: pid %d lazy alloc addr 0x%x -> page 0x%x\n",
+                p->pid, fault_addr, va);
+        if(allocuvm(p->pgdir, va, va + PGSIZE) != 0){
+          cprintf("pgfault: pid %d lazy mapped 0x%x\n", p->pid, va);
+          return;  // Success - mapped one page
+        }
+        cprintf("pgfault: pid %d lazy alloc failed for 0x%x\n", p->pid, va);
+      }
+    }
+#endif
     // In user space, assume process misbehaved.
     cprintf("pid %d %s: trap %d err %d on cpu %d "
             "eip 0x%x addr 0x%x--kill proc\n",
