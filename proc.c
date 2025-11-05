@@ -155,6 +155,25 @@ userinit(void)
 
 // Grow current process's memory by n bytes.
 // Return 0 on success, -1 on failure.
+
+/* growproc is called by sbrk, which is called by malloc.
+
+  So, growproc is used to dynamically allocate writable
+  memory at runtime to a process, specifically for the
+  heap.
+
+  growproc() used to do this by allocating physical pages
+  in memory from kalloc() (kmem.freelist) and increase the
+  size of the process.
+
+  But since, we will not allocating physical pages prematurely,
+  we will only increase the size of the process and fill PTE
+  with necessary perms.
+
+  We will maintain a uint minsz in struct proc to identify the
+  faulting addresses as illegal, referencing the heap or those
+  addresses whose contents are (initially) on the disk.
+*/
 int
 growproc(int n)
 {
@@ -163,7 +182,7 @@ growproc(int n)
 
   sz = curproc->sz;
   if(n > 0){
-    if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
+    if((sz = allocuvm(curproc->pgdir, sz, sz + n, 0)) == 0)
       return -1;
   } else if(n < 0){
     if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)

@@ -32,7 +32,7 @@ seginit(void)
 // Return the address of the PTE in page table pgdir
 // that corresponds to virtual address va.  If alloc!=0,
 // create any required page table pages.
-static pte_t *
+pte_t *
 walkpgdir(pde_t *pgdir, const void *va, int alloc)
 {
   pde_t *pde;
@@ -57,7 +57,7 @@ walkpgdir(pde_t *pgdir, const void *va, int alloc)
 // Create PTEs for virtual addresses starting at va that refer to
 // physical addresses starting at pa. va and size might not
 // be page-aligned.
-static int
+int
 mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
 {
   char *a, *last;
@@ -70,11 +70,13 @@ mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
       return -1;
     if(*pte & PTE_P)
       panic("remap");
-    *pte = pa | perm | PTE_P;
+    // Don't prematurely mark pages as available in PTE.
+    *pte = pa | perm;
     if(a == last)
       break;
     a += PGSIZE;
-    pa += PGSIZE;
+    if(pa || (uint)va == KERNBASE)
+      pa += PGSIZE;
   }
   return 0;
 }
@@ -108,10 +110,10 @@ static struct kmap {
   uint phys_end;
   int perm;
 } kmap[] = {
- { (void*)KERNBASE, 0,             EXTMEM,    PTE_W}, // I/O space
- { (void*)KERNLINK, V2P(KERNLINK), V2P(data), 0},     // kern text+rodata
- { (void*)data,     V2P(data),     PHYSTOP,   PTE_W}, // kern data+memory
- { (void*)DEVSPACE, DEVSPACE,      0,         PTE_W}, // more devices
+ { (void*)KERNBASE, 0,             EXTMEM,    PTE_P|PTE_W}, // I/O space
+ { (void*)KERNLINK, V2P(KERNLINK), V2P(data), PTE_P},     // kern text+rodata
+ { (void*)data,     V2P(data),     PHYSTOP,   PTE_P|PTE_W}, // kern data+memory
+ { (void*)DEVSPACE, DEVSPACE,      0,         PTE_P|PTE_W}, // more devices
 };
 
 // Set up kernel part of a page table.
@@ -179,6 +181,7 @@ switchuvm(struct proc *p)
 
 // Load the initcode into address 0 of pgdir.
 // sz must be less than a page.
+/*excuse initcode from demand paging*/
 void
 inituvm(pde_t *pgdir, char *init, uint sz)
 {
@@ -188,40 +191,52 @@ inituvm(pde_t *pgdir, char *init, uint sz)
     panic("inituvm: more than a page");
   mem = kalloc();
   memset(mem, 0, PGSIZE);
-  mappages(pgdir, 0, PGSIZE, V2P(mem), PTE_W|PTE_U);
+  mappages(pgdir, 0, PGSIZE, V2P(mem), PTE_P|PTE_W|PTE_U);
   memmove(mem, init, sz);
 }
 
-// Load a program segment into pgdir.  addr must be page-aligned
-// and the pages from addr to addr+sz must already be mapped.
-int
-loaduvm(pde_t *pgdir, char *addr, struct inode *ip, uint offset, uint sz)
-{
-  uint i, pa, n;
-  pte_t *pte;
-
-  if((uint) addr % PGSIZE != 0)
-    panic("loaduvm: addr must be page aligned");
-  for(i = 0; i < sz; i += PGSIZE){
-    if((pte = walkpgdir(pgdir, addr+i, 0)) == 0)
-      panic("loaduvm: address should exist");
-    pa = PTE_ADDR(*pte);
-    if(sz - i < PGSIZE)
-      n = sz - i;
-    else
-      n = PGSIZE;
-    if(readi(ip, P2V(pa), offset+i, n) != n)
-      return -1;
-  }
-  return 0;
-}
+/* The logic of loading a page from disk will be implemented in
+   the page fault handler. loaduvm() is useless now (won't be called)*/
 
 // Allocate page tables and physical memory to grow process from oldsz to
 // newsz, which need not be page aligned.  Returns new size or 0 on error.
+
+/* allocuvm will only allocate page tables and necessary perms.
+  Physical pages will not be allocated/ mapped to the PTEs here.
+
+  If the allocated virtual memory is for content on the disk,
+  It might be loaded in the future, once the process encounters
+  a page fault.
+
+  So, the kernel has to know where to fetch the page from.
+
+  One way is for the kernel to maintain all the proghdr of loadable
+  segments in an array to iterate and compare with the faulting address
+  with ph.vaddr to determine the corresponding ph.off to load the memory from.
+
+  But this would require a lot of disk I/O.
+
+  So, a workaround(jugaad) has been devised, since there is no physical address of
+  an allocated page in memory to fill the PTE, we will fill the PTE with the offset
+  of the elf where the respective contents are located.
+
+  This works as for loadable segments of the ELF, this should be satisfied:
+
+  ph.vaddr % PGSIZE == ph.off % PGSIZE (from man page of elf)
+
+  and since exec already checks if ph.vaddr % PGSIZE == 0, we can assume that
+  ph.off will also be PGSIZE alligned.
+
+  The inode of the elf would be available with the struct proc.
+
+  So now, the pages can be loaded with a single disk I/O.
+
+  PS: For pages of the heap, the PG_ADDR(PTE) will be 0.
+  This will be discussed about later, see growproc().
+*/
 int
-allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
+allocuvm(pde_t *pgdir, uint oldsz, uint newsz, uint elfoff)
 {
-  char *mem;
   uint a;
 
   if(newsz >= KERNBASE)
@@ -230,20 +245,10 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
     return oldsz;
 
   a = PGROUNDUP(oldsz);
-  for(; a < newsz; a += PGSIZE){
-    mem = kalloc();
-    if(mem == 0){
-      cprintf("allocuvm out of memory\n");
-      deallocuvm(pgdir, newsz, oldsz);
-      return 0;
-    }
-    memset(mem, 0, PGSIZE);
-    if(mappages(pgdir, (char*)a, PGSIZE, V2P(mem), PTE_W|PTE_U) < 0){
-      cprintf("allocuvm out of memory (2)\n");
-      deallocuvm(pgdir, newsz, oldsz);
-      kfree(mem);
-      return 0;
-    }
+  if(mappages(pgdir, (char*)a, newsz - oldsz, PTE_ADDR(elfoff), PTE_W | PTE_U) < 0){
+    cprintf("allocuvm out of memory (2)\n");
+    deallocuvm(pgdir, newsz, oldsz);
+    return 0;
   }
   return newsz;
 }
@@ -252,6 +257,7 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
 // newsz.  oldsz and newsz need not be page-aligned, nor does newsz
 // need to be less than oldsz.  oldsz can be larger than the actual
 // process size.  Returns the new process size.
+/* Updated deallocuvm() to skip over PTEs with absent PTE_P*/
 int
 deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
 {
@@ -264,9 +270,9 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
   a = PGROUNDUP(newsz);
   for(; a  < oldsz; a += PGSIZE){
     pte = walkpgdir(pgdir, (char*)a, 0);
-    if(!pte)
+    if(!pte || !(*pte & PTE_P))
       a = PGADDR(PDX(a) + 1, 0, 0) - PGSIZE;
-    else if((*pte & PTE_P) != 0){
+    else{
       pa = PTE_ADDR(*pte);
       if(pa == 0)
         panic("kfree");
@@ -317,25 +323,39 @@ copyuvm(pde_t *pgdir, uint sz)
 {
   pde_t *d;
   pte_t *pte;
-  uint pa, i, flags;
-  char *mem;
+  uint pa, i, flags, mem;
 
   if((d = setupkvm()) == 0)
     return 0;
   for(i = 0; i < sz; i += PGSIZE){
+    // Panic at PTE not being present, it's fine.
     if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
       panic("copyuvm: pte should exist");
-    if(!(*pte & PTE_P))
-      panic("copyuvm: page not present");
-    pa = PTE_ADDR(*pte);
-    flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto bad;
-    memmove(mem, (char*)P2V(pa), PGSIZE);
-    if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0) {
-      kfree(mem);
-      goto bad;
+
+    // If page not yet allocated for the parent process,
+    // Copy whatever is in the PTE.
+    if(!(*pte & PTE_P)){
+      mem = PTE_ADDR(*pte);
+      flags = PTE_FLAGS(*pte);
     }
+
+    // If a physical page is allocated for the parent,
+    // allocate a physical page for the child and copy
+    // its contents. (no C.O.W in xv6)
+    else{
+      pa = PTE_ADDR(*pte);
+      flags = PTE_FLAGS(*pte);
+      if((mem = (uint)kalloc()) == 0)
+        goto bad;
+      memmove((char *)mem, (char*)P2V(pa), PGSIZE);
+      mem = V2P(mem);
+    }
+
+    if(mappages(d, (void*)i, PGSIZE, mem, flags) < 0) {
+      if(*pte & PTE_P)
+        kfree((char *)P2V(mem));
+      goto bad;
+     }
   }
   return d;
 
@@ -391,4 +411,3 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
 // Blank page.
 //PAGEBREAK!
 // Blank page.
-

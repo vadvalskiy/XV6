@@ -14,7 +14,7 @@ exec(char *path, char **argv)
   int i, off;
   uint argc, sz, sp, ustack[3+MAXARG+1];
   struct elfhdr elf;
-  struct inode *ip;
+  struct inode *ip, *elf_ip;
   struct proghdr ph;
   pde_t *pgdir, *oldpgdir;
   struct proc *curproc = myproc();
@@ -49,22 +49,40 @@ exec(char *path, char **argv)
       goto bad;
     if(ph.vaddr + ph.memsz < ph.vaddr)
       goto bad;
-    if((sz = allocuvm(pgdir, sz, ph.vaddr + ph.memsz)) == 0)
+    /*To be changed, logic may be WRONG*/
+    // First allocate memory (only page tables) for contents which
+    // on the file (upto ph.filesz) with respective elfoff in PTEs.
+    if((sz = allocuvm(pgdir, sz, ph.vaddr + ph.filesz, ph.off)) == 0)
       goto bad;
-    if(ph.vaddr % PGSIZE != 0)
-      goto bad;
-    if(loaduvm(pgdir, (char*)ph.vaddr, ip, ph.off, ph.filesz) < 0)
+    // If ph.memsz > ph.filesz, instead of elfoff in the PTEs
+    // Fill the PTE with zeroes, so that pgflt handler can recognise
+    // this page as not be loaded from elf.
+    if(ph.memsz > ph.filesz)
+      if((sz = allocuvm(pgdir, sz, ph.vaddr + ph.memsz, 0)) == 0)
+        goto bad;
+    if(ph.vaddr % PGSIZE != 0 || ph.off % PGSIZE != 0)
       goto bad;
   }
   iunlockput(ip);
   end_op();
+  /* Since ip is used for error handling
+  downstream, we will copy ip to elf.*/
+  elf_ip = ip;
   ip = 0;
 
   // Allocate two pages at the next page boundary.
   // Make the first inaccessible.  Use the second as the user stack.
+  /* excuse the two stack pages from demand paging
+    as these are immediately required by exec for argv
+
+    but since we've modified allocuvm, we have to manually allocate
+    physical pages for the stack and pass their addresses to be mapped.*/
   sz = PGROUNDUP(sz);
-  if((sz = allocuvm(pgdir, sz, sz + 2*PGSIZE)) == 0)
-    goto bad;
+  for(i = 0; i < 2; i++){
+    char *ustackpg = kalloc();
+    if((sz = allocuvm(pgdir, sz, sz + PGSIZE, (uint)ustackpg)) == 0)
+      goto bad;
+  }
   clearpteu(pgdir, (char*)(sz - 2*PGSIZE));
   sp = sz;
 
@@ -97,8 +115,12 @@ exec(char *path, char **argv)
   oldpgdir = curproc->pgdir;
   curproc->pgdir = pgdir;
   curproc->sz = sz;
+  // minsz = process size at exec
+  curproc->minsz = sz;
   curproc->tf->eip = elf.entry;  // main
   curproc->tf->esp = sp;
+  // inode to elf file of process
+  curproc->elf = elf_ip;
   switchuvm(curproc);
   freevm(oldpgdir);
   return 0;

@@ -91,6 +91,9 @@ void            end_op();
 extern int      ismp;
 void            mpinit(void);
 
+// pgflt.c
+void            page_fault_handler(void);
+
 // picirq.c
 void            picenable(int);
 void            picinit(void);
@@ -172,14 +175,15 @@ void            uartputc(int);
 
 // vm.c
 void            seginit(void);
+pte_t*          walkpgdir(pde_t*, const void*, int);
+int             mappages(pde_t*, void*, uint, uint, int);
 void            kvmalloc(void);
 pde_t*          setupkvm(void);
 char*           uva2ka(pde_t*, char*);
-int             allocuvm(pde_t*, uint, uint);
+int             allocuvm(pde_t*, uint, uint, uint);
 int             deallocuvm(pde_t*, uint, uint);
 void            freevm(pde_t*);
 void            inituvm(pde_t*, char*, uint);
-int             loaduvm(pde_t*, char*, struct inode*, uint, uint);
 pde_t*          copyuvm(pde_t*, uint);
 void            switchuvm(struct proc*);
 void            switchkvm(void);
