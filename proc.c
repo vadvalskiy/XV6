@@ -88,6 +88,7 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->priority = 32;
 
   release(&ptable.lock);
 
@@ -215,6 +216,7 @@ fork(void)
   acquire(&ptable.lock);
 
   np->state = RUNNABLE;
+  np->priority = 32;
 
   release(&ptable.lock);
 
@@ -531,4 +533,76 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+
+int
+sys_setpriority(void)
+{
+  int pid, pr;
+  struct proc *p;
+
+  if(argint(0, &pid) < 0) return -1;
+  if(argint(1, &pr) < 0)  return -1;
+
+  acquire(&ptable.lock);
+
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->pid == pid){
+      int old = p->priority;
+      p->priority = pr;
+      release(&ptable.lock);
+      return old;
+    }
+  }
+
+  release(&ptable.lock);
+  return -1;  // not found
+}
+
+
+int
+sys_getpriority(void)
+{
+  int pid;
+  struct proc *p;
+
+  if(argint(0, &pid) < 0) return -1;
+
+  acquire(&ptable.lock);
+
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->pid == pid){
+      int pr = p->priority;
+      release(&ptable.lock);
+      return pr;
+    }
+  }
+
+  release(&ptable.lock);
+  return -1;  // not found
+}
+
+
+int
+sys_printptable(void)
+{
+  struct proc *p;
+
+  cprintf("Process Table:\n");
+
+  acquire(&ptable.lock);
+
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state != UNUSED){
+      cprintf("Name: %s\n", p->name);
+      cprintf("PID: %d\n", p->pid);
+      cprintf("State: %d\n", p->state);
+      cprintf("Priority: %d\n", p->priority);
+      cprintf("---------------------\n");
+    }
+  }
+
+  release(&ptable.lock);
+  return 0;
 }
