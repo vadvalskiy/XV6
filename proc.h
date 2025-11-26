@@ -32,12 +32,36 @@ struct context {
   uint eip;
 };
 
+// Maximum elements of segment info that can fit in page.
+#define MAXSEG 255
+
+// All the info required for the page fault handler to load
+// required content from disk.
+struct loadprof {
+  uint vaddr;
+  uint off;
+  uint filesz;
+  uint memsz;
+};
+
+struct elfprof {
+  // just in case the number of loadable segments is more than
+  // (PGSIZE - sizeof(elfprof)) / sizeof(load_profile)
+  struct elfprof *next;
+  // number of loadable elf segments
+  uint numseg;
+  // Range of virtual addresses convered in this particular
+  // ELF profile, if your address is not here, move on to the
+  // next page.
+  uint start_vaddr;
+  uint end_vaddr;
+};
+
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 // Per-process state
 struct proc {
   uint sz;                     // Size of process memory (bytes)
-  uint minsz;                  // Size after exec (to identify heap addresses)
   pde_t* pgdir;                // Page table
   char *kstack;                // Bottom of kernel stack for this process
   enum procstate state;        // Process state
@@ -51,6 +75,7 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
   struct inode *elf;           // Store the inode of the elf file.
+  struct elfprof *ep;          // Store info about loadable segments from elf file.
 };
 
 // Process memory is laid out contiguously, low addresses first:

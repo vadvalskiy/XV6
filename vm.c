@@ -64,19 +64,27 @@ mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
   pte_t *pte;
 
   a = (char*)PGROUNDDOWN((uint)va);
-  last = (char*)PGROUNDDOWN(((uint)va) + size - 1);
+  last = (char*)PGROUNDDOWN(((uint)a) + size - 1);
+
   for(;;){
     if((pte = walkpgdir(pgdir, a, 1)) == 0)
       return -1;
+    /*if(perm & PTE_U) {
+      cprintf("mappages called for user page (below addresses)\n");
+      cprintf("va: %x\n", (uint)va);
+      cprintf("a: %x\n", (uint)a);
+      cprintf("last: %x\n", (uint)last);
+      cprintf("pa: %x\n", (uint)pa);
+      cprintf("pte (before): %x\n", (uint)*pte);
+    }*/
     if(*pte & PTE_P)
-      panic("remap");
+      panic("mappages: remap");
     // Don't prematurely mark pages as available in PTE.
     *pte = pa | perm;
     if(a == last)
       break;
     a += PGSIZE;
-    if(pa || (uint)va == KERNBASE)
-      pa += PGSIZE;
+    pa += PGSIZE;
   }
   return 0;
 }
@@ -195,62 +203,81 @@ inituvm(pde_t *pgdir, char *init, uint sz)
   memmove(mem, init, sz);
 }
 
-/* The logic of loading a page from disk will be implemented in
-   the page fault handler. loaduvm() is useless now (won't be called)*/
-
-// Allocate page tables and physical memory to grow process from oldsz to
-// newsz, which need not be page aligned.  Returns new size or 0 on error.
-
-/* allocuvm will only allocate page tables and necessary perms.
-  Physical pages will not be allocated/ mapped to the PTEs here.
-
-  If the allocated virtual memory is for content on the disk,
-  It might be loaded in the future, once the process encounters
-  a page fault.
-
-  So, the kernel has to know where to fetch the page from.
-
-  One way is for the kernel to maintain all the proghdr of loadable
-  segments in an array to iterate and compare with the faulting address
-  with ph.vaddr to determine the corresponding ph.off to load the memory from.
-
-  But this would require a lot of disk I/O.
-
-  So, a workaround(jugaad) has been devised, since there is no physical address of
-  an allocated page in memory to fill the PTE, we will fill the PTE with the offset
-  of the elf where the respective contents are located.
-
-  This works as for loadable segments of the ELF, this should be satisfied:
-
-  ph.vaddr % PGSIZE == ph.off % PGSIZE (from man page of elf)
-
-  and since exec already checks if ph.vaddr % PGSIZE == 0, we can assume that
-  ph.off will also be PGSIZE alligned.
-
-  The inode of the elf would be available with the struct proc.
-
-  So now, the pages can be loaded with a single disk I/O.
-
-  PS: For pages of the heap, the PG_ADDR(PTE) will be 0.
-  This will be discussed about later, see growproc().
-*/
-int
-allocuvm(pde_t *pgdir, uint oldsz, uint newsz, uint elfoff)
+// Allocate a new page to store the info
+// about loadable segments in the ELF file.
+static struct elfprof*
+allocprof(void)
 {
-  uint a;
-
-  if(newsz >= KERNBASE)
+  char *ep;
+  if((ep = kalloc()) == 0)
     return 0;
-  if(newsz < oldsz)
-    return oldsz;
+  memset(ep, 0, PGSIZE);
+  return (struct elfprof *)ep;
+}
 
-  a = PGROUNDUP(oldsz);
-  if(mappages(pgdir, (char*)a, newsz - oldsz, PTE_ADDR(elfoff), PTE_W | PTE_U) < 0){
-    cprintf("allocuvm out of memory (2)\n");
-    deallocuvm(pgdir, newsz, oldsz);
+// Record all the info about loadable segments needed
+// by the loader to dynamically load content from disk
+// upon a page fault. (to be called by exec)
+struct elfprof*
+recorduvm(struct elfprof *ep, uint vaddr, uint off, uint filesz, uint memsz)
+{
+  if(!ep)
+    if((ep = allocprof()) == 0)
+      return 0;
+
+  if(ep->numseg == MAXSEG){
+    struct elfprof *nep;
+    if((nep = allocprof()) == 0){
+      freeprof(ep);
+      return 0;
+    }
+    nep->next = ep;
+    ep = nep;
+  }
+
+  if(!ep->numseg)
+    ep->start_vaddr = vaddr;
+  ep->end_vaddr = vaddr + memsz;
+
+  struct loadprof *lp = (struct loadprof *)ep;
+  ep->numseg++;
+  lp[ep->numseg].vaddr = vaddr;
+  lp[ep->numseg].off = off;
+  lp[ep->numseg].filesz = filesz;
+  lp[ep->numseg].memsz = memsz;
+  return ep;
+}
+
+// Recursively copies the ELF profile of one process
+// To be called during fork.
+struct elfprof*
+copyprof(struct elfprof *ep)
+{
+  if(!ep)
+    return 0;
+  struct elfprof *nep;
+  if((nep = allocprof()) == 0)
+    return 0;
+  nep->numseg = ep->numseg;
+  nep->start_vaddr = ep->start_vaddr;
+  nep->end_vaddr = ep->end_vaddr;
+  nep->next = copyprof(ep->next);
+  if(ep->next && !nep->next){
+    kfree((char *)nep);
     return 0;
   }
-  return newsz;
+  memmove((char *)(ep + 1), (char *)(nep + 1), PGSIZE - sizeof(ep));
+  return nep;
+}
+
+// Recursively frees the pages allocated for ELF profile
+void
+freeprof(struct elfprof *ep)
+{
+  if(ep == 0)
+    return;
+  freeprof(ep->next);
+  kfree((char *)ep);
 }
 
 // Deallocate user pages to bring the process size from oldsz to
@@ -323,39 +350,29 @@ copyuvm(pde_t *pgdir, uint sz)
 {
   pde_t *d;
   pte_t *pte;
-  uint pa, i, flags, mem;
+  uint pa, i, flags;
+  char *mem;
 
   if((d = setupkvm()) == 0)
     return 0;
   for(i = 0; i < sz; i += PGSIZE){
-    // Panic at PTE not being present, it's fine.
     if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
-      panic("copyuvm: pte should exist");
-
-    // If page not yet allocated for the parent process,
-    // Copy whatever is in the PTE.
-    if(!(*pte & PTE_P)){
-      mem = PTE_ADDR(*pte);
-      flags = PTE_FLAGS(*pte);
-    }
+      continue;
 
     // If a physical page is allocated for the parent,
     // allocate a physical page for the child and copy
     // its contents. (no C.O.W in xv6)
-    else{
+    if(*pte & PTE_P){
       pa = PTE_ADDR(*pte);
       flags = PTE_FLAGS(*pte);
-      if((mem = (uint)kalloc()) == 0)
+      if((mem = kalloc()) == 0)
         goto bad;
-      memmove((char *)mem, (char*)P2V(pa), PGSIZE);
-      mem = V2P(mem);
-    }
-
-    if(mappages(d, (void*)i, PGSIZE, mem, flags) < 0) {
-      if(*pte & PTE_P)
+      memmove(mem, (char*)P2V((char *)pa), PGSIZE);
+      if(mappages(d, (void*)i, PGSIZE, V2P((uint)mem), flags) < 0) {
         kfree((char *)P2V(mem));
-      goto bad;
-     }
+        goto bad;
+      }
+    }
   }
   return d;
 

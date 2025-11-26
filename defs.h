@@ -9,6 +9,8 @@ struct spinlock;
 struct sleeplock;
 struct stat;
 struct superblock;
+struct elfprof;
+struct loadprof;
 
 // bio.c
 void            binit(void);
@@ -180,7 +182,9 @@ int             mappages(pde_t*, void*, uint, uint, int);
 void            kvmalloc(void);
 pde_t*          setupkvm(void);
 char*           uva2ka(pde_t*, char*);
-int             allocuvm(pde_t*, uint, uint, uint);
+struct elfprof* recorduvm(struct elfprof*, uint, uint, uint, uint);
+struct elfprof* copyprof(struct elfprof*);
+void            freeprof(struct elfprof*);
 int             deallocuvm(pde_t*, uint, uint);
 void            freevm(pde_t*);
 void            inituvm(pde_t*, char*, uint);

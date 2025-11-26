@@ -10,14 +10,16 @@
 int
 exec(char *path, char **argv)
 {
-  char *s, *last;
+  //cprintf("exec called: %s\n", argv[0]);
+  char *s, *last, *ustackpg;
   int i, off;
   uint argc, sz, sp, ustack[3+MAXARG+1];
   struct elfhdr elf;
-  struct inode *ip, *elf_ip;
+  struct inode *ip;
   struct proghdr ph;
   pde_t *pgdir, *oldpgdir;
   struct proc *curproc = myproc();
+  struct elfprof *ep = 0;
 
   begin_op();
 
@@ -31,57 +33,45 @@ exec(char *path, char **argv)
 
   // Check ELF header
   if(readi(ip, (char*)&elf, 0, sizeof(elf)) != sizeof(elf))
-    goto bad;
+    goto release_ilock;
   if(elf.magic != ELF_MAGIC)
-    goto bad;
+    goto release_ilock;
 
   if((pgdir = setupkvm()) == 0)
-    goto bad;
+    goto release_ilock;
 
-  // Load program into memory.
+  // Record relevant data for loadable segments.
   sz = 0;
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
     if(readi(ip, (char*)&ph, off, sizeof(ph)) != sizeof(ph))
-      goto bad;
+      goto release_ilock;
     if(ph.type != ELF_PROG_LOAD)
       continue;
     if(ph.memsz < ph.filesz)
-      goto bad;
+      goto release_ilock;
     if(ph.vaddr + ph.memsz < ph.vaddr)
-      goto bad;
-    /*To be changed, logic may be WRONG*/
-    // First allocate memory (only page tables) for contents which
-    // on the file (upto ph.filesz) with respective elfoff in PTEs.
-    if((sz = allocuvm(pgdir, sz, ph.vaddr + ph.filesz, ph.off)) == 0)
-      goto bad;
-    // If ph.memsz > ph.filesz, instead of elfoff in the PTEs
-    // Fill the PTE with zeroes, so that pgflt handler can recognise
-    // this page as not be loaded from elf.
-    if(ph.memsz > ph.filesz)
-      if((sz = allocuvm(pgdir, sz, ph.vaddr + ph.memsz, 0)) == 0)
-        goto bad;
-    if(ph.vaddr % PGSIZE != 0 || ph.off % PGSIZE != 0)
-      goto bad;
+      goto release_ilock;
+    if(ph.vaddr % PGSIZE != 0)
+      goto release_ilock;
+    if((ep = recorduvm(ep, ph.vaddr, ph.off, ph.filesz, ph.memsz)) == 0)
+      goto release_ilock;
   }
-  iunlockput(ip);
+  iunlock(ip);
   end_op();
-  /* Since ip is used for error handling
-  downstream, we will copy ip to elf.*/
-  elf_ip = ip;
-  ip = 0;
+
+  // Update the program's virtual size.
+  sz = ep->end_vaddr;
 
   // Allocate two pages at the next page boundary.
   // Make the first inaccessible.  Use the second as the user stack.
   /* excuse the two stack pages from demand paging
-    as these are immediately required by exec for argv
-
-    but since we've modified allocuvm, we have to manually allocate
-    physical pages for the stack and pass their addresses to be mapped.*/
+    as these are immediately required by exec for argv */
   sz = PGROUNDUP(sz);
   for(i = 0; i < 2; i++){
-    char *ustackpg = kalloc();
-    if((sz = allocuvm(pgdir, sz, sz + PGSIZE, (uint)ustackpg)) == 0)
+    if((ustackpg = kalloc()) == 0)
       goto bad;
+    mappages(pgdir, (char *)sz, PGSIZE, V2P(ustackpg), PTE_P|PTE_W|PTE_U);
+    sz += PGSIZE;
   }
   clearpteu(pgdir, (char*)(sz - 2*PGSIZE));
   sp = sz;
@@ -115,21 +105,26 @@ exec(char *path, char **argv)
   oldpgdir = curproc->pgdir;
   curproc->pgdir = pgdir;
   curproc->sz = sz;
-  // minsz = process size at exec
-  curproc->minsz = sz;
   curproc->tf->eip = elf.entry;  // main
   curproc->tf->esp = sp;
   // inode to elf file of process
-  curproc->elf = elf_ip;
+  if(curproc->elf)
+    iput(curproc->elf);
+  curproc->elf = ip;
+  // Info page about loadable segments
+  freeprof(curproc->ep);
+  curproc->ep = ep;
   switchuvm(curproc);
   freevm(oldpgdir);
   return 0;
 
+ release_ilock:
+  iunlock(ip);
  bad:
   if(pgdir)
     freevm(pgdir);
   if(ip){
-    iunlockput(ip);
+    iput(ip);
     end_op();
   }
   return -1;

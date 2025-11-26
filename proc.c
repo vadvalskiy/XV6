@@ -96,6 +96,7 @@ found:
     p->state = UNUSED;
     return 0;
   }
+
   sp = p->kstack + KSTACKSIZE;
 
   // Leave room for trap frame.
@@ -111,6 +112,8 @@ found:
   p->context = (struct context*)sp;
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
+  // Don't allocate memory for elfprof yet
+  p->ep = 0;
 
   return p;
 }
@@ -166,13 +169,8 @@ userinit(void)
   in memory from kalloc() (kmem.freelist) and increase the
   size of the process.
 
-  But since, we will not allocating physical pages prematurely,
-  we will only increase the size of the process and fill PTE
-  with necessary perms.
-
-  We will maintain a uint minsz in struct proc to identify the
-  faulting addresses as illegal, referencing the heap or those
-  addresses whose contents are (initially) on the disk.
+  But since, we will not allocate physical pages prematurely,
+  we will only increase the size of the process.
 */
 int
 growproc(int n)
@@ -182,8 +180,9 @@ growproc(int n)
 
   sz = curproc->sz;
   if(n > 0){
-    if((sz = allocuvm(curproc->pgdir, sz, sz + n, 0)) == 0)
+    if(sz + n >= KERNBASE)
       return -1;
+    sz += n;
   } else if(n < 0){
     if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
       return -1;
@@ -209,13 +208,16 @@ fork(void)
   }
 
   // Copy process state from proc.
-  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
+  if(((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0) ||
+    ((np->ep = copyprof(curproc->ep)) == 0)){
     kfree(np->kstack);
     np->kstack = 0;
     np->state = UNUSED;
     return -1;
   }
   np->sz = curproc->sz;
+  if(curproc->elf)
+    np->elf = idup(curproc->elf);
   np->parent = curproc;
   *np->tf = *curproc->tf;
 
@@ -263,8 +265,11 @@ exit(void)
 
   begin_op();
   iput(curproc->cwd);
+  if(curproc->elf)
+    iput(curproc->elf);
   end_op();
   curproc->cwd = 0;
+  curproc->elf = 0;
 
   acquire(&ptable.lock);
 
@@ -308,6 +313,8 @@ wait(void)
         pid = p->pid;
         kfree(p->kstack);
         p->kstack = 0;
+        freeprof(p->ep);
+        p->ep = 0;
         freevm(p->pgdir);
         p->pid = 0;
         p->parent = 0;
