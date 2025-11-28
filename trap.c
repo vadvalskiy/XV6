@@ -63,12 +63,14 @@ trap(struct trapframe *tf)
     }
     lapiceoi();
     break;
-  case T_IRQ0 + IRQ_IDE:
-    ideintr();
+  case T_IRQ0 + IRQ_IDE: // Abrar : send interrupt to primary bus (flag=0 as parameter to ideintr() )
+    ideintr(0);
     lapiceoi();
     break;
-  case T_IRQ0 + IRQ_IDE+1:
+  case T_IRQ0 + IRQ_IDE+1:// Abrar : send interrupt to secondary bus (flag=1 as parameter to ideintr() )
     // Bochs generates spurious IDE1 interrupts.
+    ideintr(1);//interrupt from device 2
+    lapiceoi();
     break;
   case T_IRQ0 + IRQ_KBD:
     kbdintr();
