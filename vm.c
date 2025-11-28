@@ -239,12 +239,11 @@ recorduvm(struct elfprof *ep, uint vaddr, uint off, uint filesz, uint memsz)
     ep->start_vaddr = vaddr;
   ep->end_vaddr = vaddr + memsz;
 
-  struct loadprof *lp = (struct loadprof *)ep;
+  ep->ls[ep->numseg].vaddr = vaddr;
+  ep->ls[ep->numseg].off = off;
+  ep->ls[ep->numseg].filesz = filesz;
+  ep->ls[ep->numseg].memsz = memsz;
   ep->numseg++;
-  lp[ep->numseg].vaddr = vaddr;
-  lp[ep->numseg].off = off;
-  lp[ep->numseg].filesz = filesz;
-  lp[ep->numseg].memsz = memsz;
   return ep;
 }
 
@@ -266,7 +265,7 @@ copyprof(struct elfprof *ep)
     kfree((char *)nep);
     return 0;
   }
-  memmove((char *)(ep + 1), (char *)(nep + 1), PGSIZE - sizeof(ep));
+  memmove((char *)ep->ls, (char *)nep->ls, MAXSEG * sizeof(struct loadseg));
   return nep;
 }
 

@@ -37,7 +37,7 @@ struct context {
 
 // All the info required for the page fault handler to load
 // required content from disk.
-struct loadprof {
+struct loadseg {
   uint vaddr;
   uint off;
   uint filesz;
@@ -55,6 +55,7 @@ struct elfprof {
   // next page.
   uint start_vaddr;
   uint end_vaddr;
+  struct loadseg ls[MAXSEG];
 };
 
 enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };

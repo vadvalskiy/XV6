@@ -6,13 +6,13 @@
 #include "x86.h"
 #include "proc.h"
 
-// Fetches the loadprof which spans across the
+// Fetches the struct loadseg which spans across the
 // faulting address.
-/* loadprof contains a subset of the fields present in
+/* struct loadseg contains a subset of the fields present in
   loadable ELF program headers. It houses only those fields
   which are useful to the loader.*/
-static struct loadprof*
-fetch_loadprof(uint flt_addr, struct elfprof *ep)
+static struct loadseg*
+fetch_loadseg(uint flt_addr, struct elfprof *ep)
 {
   while(ep && ep->start_vaddr > flt_addr)
     ep = ep->next;
@@ -20,10 +20,9 @@ fetch_loadprof(uint flt_addr, struct elfprof *ep)
   if(!ep)
     return 0;
 
-  struct loadprof *lp = (struct loadprof *)ep;
-  for(int i = 1; i <= ep->numseg; i++) {
-    if(lp[i].vaddr <= flt_addr && ((lp[i].vaddr + lp[i].memsz) >= flt_addr))
-      return &lp[i];
+  for(int i = 0; i <= ep->numseg; i++) {
+    if(ep->ls[i].vaddr <= flt_addr && ((ep->ls[i].vaddr + ep->ls[i].memsz) >= flt_addr))
+      return &ep->ls[i];
   }
   return 0;
 }
@@ -32,20 +31,20 @@ fetch_loadprof(uint flt_addr, struct elfprof *ep)
 /* Loads atmost PGSIZE amount of content from the ELF file into
   the RAM at a specified physical address.*/
 static int
-loadpage(struct inode *ip, uint flt_addr, char *pa, struct loadprof *lp)
+loadpage(struct inode *ip, uint flt_addr, char *pa, struct loadseg *ls)
 {
   // If issued address lies between vaddr + filesz and
   // vaddr + memsz, nothing to load here. Simply return.
-  if(flt_addr >= lp->vaddr + lp->filesz)
+  if(flt_addr >= ls->vaddr + ls->filesz)
     return 0;
 
   // If size of content to be loaded in less than PGSIZE,
   // consider sz accordingly.
-  uint sz = lp->vaddr + lp->filesz - PGROUNDDOWN(flt_addr);
+  uint sz = ls->vaddr + ls->filesz - PGROUNDDOWN(flt_addr);
   sz = sz < PGSIZE ? sz : PGSIZE;
 
   // Get the ELF offset.
-  uint off = lp->off + PGROUNDDOWN(flt_addr) - lp->vaddr;
+  uint off = ls->off + PGROUNDDOWN(flt_addr) - ls->vaddr;
 
   begin_op();
   ilock(ip);
@@ -119,13 +118,13 @@ page_fault_handler(void)
   // Fetch the information (mainly the ELF offset and size)
   // of the loadable segment which spans across the faulting
   // address (if not, terminate the process as it's an illegal access)
-  struct loadprof *lp = fetch_loadprof((uint)flt_addr, p->ep);
-  if(!lp)
+  struct loadseg *ls = fetch_loadseg((uint)flt_addr, p->ep);
+  if(!ls)
     goto illegal_access;
 
   // Load the contents from the ELF file into the empty_page allocated
   // before in physical memory.
-  if(loadpage(p->elf, (uint)flt_addr, empty_page, lp) < 0)
+  if(loadpage(p->elf, (uint)flt_addr, empty_page, ls) < 0)
     goto load_fail;
   return;
 
