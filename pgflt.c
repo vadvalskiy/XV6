@@ -99,12 +99,20 @@ page_fault_handler(void)
 
   // Allocate a physical page for the process
   // from memory.
-	if((empty_page = kalloc()) == 0)
-	  goto out_of_memory;
+  if((empty_page = kalloc()) == 0)
+    goto out_of_memory;
   // Set all bytes in the page to 0.
   /* Just to make life easier, will refactor
     later if necessary.*/
   memset(empty_page, 0, PGSIZE);
+
+  // Check if page was swapped out before.
+  uint pte = (uint)walkpgdir(p->pgdir, flt_addr, 0);
+  if(PTE_ADDR(pte)) {
+    uint swap_off = PTE_ADDR(pte);
+    read_from_swap(empty_page, swap_off);
+  }
+
   // Map the allocated page's physical address
   // to user's virtual address space.
   mappages(p->pgdir, flt_addr, PGSIZE, V2P(empty_page), PTE_P|PTE_W|PTE_U);

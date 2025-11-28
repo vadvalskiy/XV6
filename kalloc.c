@@ -74,13 +74,73 @@ kfree(char *v)
   kmem.freelist = r;
   if(kmem.use_lock)
     release(&kmem.lock);
+  acquire(&ramlock);
+  rammap[PA_2_RDX((uint)V2P(v))] = 0;
+  release(&ramlock);
+}
+
+// Returns the PA of the evicted page in RAM
+uint
+evict_page(void)
+{
+  uint victim_entry = 0;
+  uint victim_idx = 0;
+
+  // Choose a victim to evict
+  acquire(&ramlock);
+  for(int i = RAMMAP_PAGES - 1; i >= 0; i--) {
+    if(SWAP_BIT(rammap[i])) {
+      victim_entry = rammap[i];
+      victim_idx = i;
+      break;
+    }
+  }
+  release(&ramlock);
+
+  // Find out the owner pid and the virtual address
+  // which this page is mapped to.
+  uint pid = GET_PID(victim_entry);
+  uint va = PTE_ADDR(victim_entry);
+  uint pa = RDX_2_PA(victim_idx);
+
+  // Fetch the struct proc of owner process
+  struct proc *vproc = 0;
+  acquire(&ptable.lock);
+  for(i = 0; i < NPROC; i++) {
+    if(proc[i].pid == pid) {
+      vproc = &proc[i];
+      break;
+    }
+  }
+  release(&ptable.lock);
+
+  // Write contents of the page to swapspace
+  // get the offset.
+  acquire(&swaplock);
+  uint off = write_to_swap(pa);
+  release(&swaplock);
+
+  // Store the page-aligned swapspace offset into
+  // the PTE corresponding to the evicted page in
+  // owner process's address space.
+  pte_t *pte = walkpgdir(vproc->pgdir, va, 0);
+  perms = *pte & ~(0xFFF);
+  *pte = ((off << 12) | (perms & ~PTE_P));
+
+  // Finally updated rammap as free.
+  acquire(&ramlock);
+  rammap[victim_idx] = 0;
+  release(&ramlock);
+
+  // Return the physical address of the now free page.
+  return pa;
 }
 
 // Allocate one 4096-byte page of physical memory.
 // Returns a pointer that the kernel can use.
 // Returns 0 if the memory cannot be allocated.
 char*
-kalloc(void)
+kalloc()
 {
   struct run *r;
 
@@ -93,4 +153,3 @@ kalloc(void)
     release(&kmem.lock);
   return (char*)r;
 }
-
