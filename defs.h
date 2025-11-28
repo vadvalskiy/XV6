@@ -10,7 +10,7 @@ struct sleeplock;
 struct stat;
 struct superblock;
 struct elfprof;
-struct loadprof;
+struct loadseg;
 
 // bio.c
 void            binit(void);
@@ -152,6 +152,10 @@ char*           safestrcpy(char*, const char*, int);
 int             strlen(const char*);
 int             strncmp(const char*, const char*, uint);
 char*           strncpy(char*, const char*, int);
+
+// swap.c
+void            read_from_swap(uint, char*);
+uint            write_to_swap(char*);
 
 // syscall.c
 int             argint(int, int*);

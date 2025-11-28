@@ -19,6 +19,7 @@ OBJS = \
 	sleeplock.o\
 	spinlock.o\
 	string.o\
+	swap.o\
 	swtch.o\
 	syscall.o\
 	sysfile.o\

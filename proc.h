@@ -79,6 +79,9 @@ struct proc {
   struct elfprof *ep;          // Store info about loadable segments from elf file.
 };
 
+// For rammap entries to notify kernel ownership.
+#define PID_KERNEL 0X7FF
+
 // Process memory is laid out contiguously, low addresses first:
 //   text
 //   original data and bss

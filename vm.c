@@ -418,7 +418,7 @@ bad:
       swap_refcount[slot]--;
       release(&swaplock);
     }
-    
+
     // Free the pages too while at it.
     else if (*cpte & PTE_P) {
       uint cpg = PTE_ADDR(*cpte);

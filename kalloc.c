@@ -82,11 +82,11 @@ kfree(char *v)
 }
 
 // Returns the PA of the evicted page in RAM
-uint
+static uint
 evict_page(void)
 {
   uint victim_entry = 0;
-  uint victim_idx = 0;
+  uint victim_idx = -1;
 
   // Choose a victim to evict
   acquire(&ramlock);
@@ -98,6 +98,10 @@ evict_page(void)
     }
   }
   release(&ramlock);
+
+  // No swappable pages found
+  if(victim_idx < 0)
+    return 0;
 
   // Find out the owner pid and the virtual address
   // which this page is mapped to.
@@ -119,7 +123,7 @@ evict_page(void)
   // Write contents of the page to swapspace
   // get the offset.
   acquire(&swaplock);
-  uint off = write_to_swap(pa);
+  uint off = write_to_swap(P2V(pa));
   release(&swaplock);
 
   // Store the page-aligned swapspace offset into
@@ -148,15 +152,32 @@ kalloc()
 
   if(kmem.use_lock)
     acquire(&kmem.lock);
+
   r = kmem.freelist;
-  if(r)
+  if (r) {
     kmem.freelist = r->next;
+    if(kmem.use_lock)
+      release(&kmem.lock);
+
+    // mark page to be owned by kernel initially
+    acquire(&ramlock);
+    rammap[PA_2_RDX(V2P(r))] = PACK(0, PID_KERNEL, 0);
+    release(&ramlock);
+
+    return (char*)r;
+  }
+
+  // No free pages found
   if(kmem.use_lock)
     release(&kmem.lock);
 
-  // Mark page as allocated to the kernel
+  uint pa = evict_page();
+  if(pa == 0)
+    return 0;
+
   acquire(&ramlock);
-  rammap[PA_2_RDX(V2P((uint)r)] = PACK(0, PID_KERNEL, 0);
+  rammap[PA_2_RDX(pa)] = PACK(0, PID_KERNEL, 0);
   release(&ramlock);
-  return (char*)r;
+
+  return (char*)P2V(pa);
 }

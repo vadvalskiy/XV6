@@ -7,7 +7,6 @@
 #include "x86.h"
 #include "traps.h"
 #include "spinlock.h"
-#include "sleeplock.h"
 #include "fs.h"
 #include "buf.h"
 
@@ -31,7 +30,7 @@ swapinit()
 
 // Return offset + 1
 // Just to avoid negative integers
-uint
+static uint
 find_free_swapslot(void)
 {
   acquire(&swaplock);
@@ -75,4 +74,3 @@ write_to_swap(char *page)
     brelse(b);
   }
 }
-
