@@ -74,8 +74,10 @@ kfree(char *v)
   kmem.freelist = r;
   if(kmem.use_lock)
     release(&kmem.lock);
+
+  // Mark page as free in rammap.
   acquire(&ramlock);
-  rammap[PA_2_RDX((uint)V2P(v))] = 0;
+  rammap[PA_2_RDX(V2P((uint)v))] = 0;
   release(&ramlock);
 }
 
@@ -151,5 +153,10 @@ kalloc()
     kmem.freelist = r->next;
   if(kmem.use_lock)
     release(&kmem.lock);
+
+  // Mark page as allocated to the kernel
+  acquire(&ramlock);
+  rammap[PA_2_RDX(V2P((uint)r)] = PACK(0, PID_KERNEL, 0);
+  release(&ramlock);
   return (char*)r;
 }

@@ -15,7 +15,7 @@ struct spinlock ramlock;
 struct spinlock swaplock;
 
 uint rammap[RAMMAP_PAGES];
-uint swapmap[NELEM_SWAPMAP];
+uint8_t swapmap[SWAP_PAGES];
 
 void
 raminit()
@@ -35,12 +35,11 @@ uint
 find_free_swapslot(void)
 {
   acquire(&swaplock);
-  for(int i = 0; i < NELEM_SWAPMAP; i++) {
-    if(swapmap[i] != 0xFFFFFFFF) {
-      uint idx = __builtin_ctz(~swapmap[i]);
-      swapmap[i] |= (1 << idx);
+  for(int i = 0; i < SWAP_PAGES; i++) {
+    if(swapmap[i] == 0) {
+      swapmap[i]++;
       release(&swaplock);
-      return i * 32 + idx + 1;
+      return i + 1;
     }
   }
   release(&swaplock);
@@ -51,30 +50,29 @@ void
 read_from_swap(uint page_index, char *dst)
 {
 	page_index--;
-    uint sector_start = page_index * 8;
-    for(int i = 0; i < 8; i++){
-        struct buf *b = bread(2, sector_start + i);
-        memmove(dst + (i * 512), b->data, 512);
-        brelse(b);
-    }
-    uint idx=page_index/32;
-	uint off=page_index-idx*32;
-    acquire(&swaplock);
-	swapmap[idx] &= ~(1<<off);
+  uint sector_start = page_index * 8;
+  for(int i = 0; i < 8; i++){
+      struct buf *b = bread(2, sector_start + i);
+      memmove(dst + (i * 512), b->data, 512);
+      brelse(b);
+  }
+  uint idx=page_index/32;
+  uint off=page_index-idx*32;
+  acquire(&swaplock);
+	swapmap[idx]--;
 	release(&swaplock);
-    
 }
 
 void
 write_to_swap(char *page)
 {
-    uint sector_start = (find_free_slot()-1)* 8;
+  uint sector_start = (find_free_slot()-1)*8;
 
-    for(int i = 0; i < 8; i++){
-        struct buf *b = bread(2,sector_start + i);
-        memmove(b->data, page + (i * 512), 512);
-        bwrite(b);
-        brelse(b);
-    }
+  for(int i = 0; i < 8; i++){
+    struct buf *b = bread(2,sector_start + i);
+    memmove(b->data, page + (i * 512), 512);
+    bwrite(b);
+    brelse(b);
+  }
 }
 

@@ -69,18 +69,17 @@ mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
   for(;;){
     if((pte = walkpgdir(pgdir, a, 1)) == 0)
       return -1;
-    /*if(perm & PTE_U) {
-      cprintf("mappages called for user page (below addresses)\n");
-      cprintf("va: %x\n", (uint)va);
-      cprintf("a: %x\n", (uint)a);
-      cprintf("last: %x\n", (uint)last);
-      cprintf("pa: %x\n", (uint)pa);
-      cprintf("pte (before): %x\n", (uint)*pte);
-    }*/
     if(*pte & PTE_P)
       panic("mappages: remap");
     // Don't prematurely mark pages as available in PTE.
     *pte = pa | perm;
+
+    if(perm & PTE_U) {
+      acquire(&ramlock);
+      rammap[PA_2_RDX(pa)] = PACK(PTE_ADDR((uint)a), myproc()->pid, 1);
+      release(&ramlock);
+    }
+
     if(a == last)
       break;
     a += PGSIZE;
@@ -340,6 +339,9 @@ clearpteu(pde_t *pgdir, char *uva)
   if(pte == 0)
     panic("clearpteu");
   *pte &= ~PTE_U;
+  acquire(&ramlock);
+  rammap[PA_2_RDX(PTE_ADDR((uint)*pte)] = PACK(0, PID_KERNEL, 0);
+  release(&ramlock);
 }
 
 // Given a parent process's page table, create a copy
@@ -372,10 +374,59 @@ copyuvm(pde_t *pgdir, uint sz)
         goto bad;
       }
     }
+
+    // If the parent's page is currently swapped out
+    else if(*pte & !PTE_P) {
+      // Get the slot number in swapspace.
+      uint slot = (PTE_ADDR(*pte) >> 12) - 1;
+
+
+      acquire(&swaplock);
+      if(swapmap[slot] == MAX_REFCOUNT) {
+        release(&swaplock);
+        goto bad;
+      }
+      swaplock[slot]++;
+      release(&swaplock);
+      
+      // create the child's PTE as an exact copy of the parent's swapped PTE
+      if((new_pte = walkpgdir(d, (char *)i, 1)) == 0) {
+        // rollback increment
+        acquire(&swaplock);
+        swap_refcount[slot]--;
+        release(&swaplock);
+        goto bad;
+      }
+      // child PTE points to the same swap slot
+      *npte = *pte;
+    }
   }
+
   return d;
 
 bad:
+  // Undo any swapslot refcount increments performed for pages < i.
+  // Walk child's page table entries up to i and decrement refcounts for swapped PTEs.
+  for(uint j = 0; j < i; j += PGSIZE){
+    pte_t *cpte = walkpgdir(d, (char *)j, 0);
+    if(cpte == 0)
+      continue;
+    if(*cpte & PTE_SWAPPED){
+      uint slot = (PTE_ADDR(*cpte) >> 12) - 1;
+
+      acquire(&swaplock);
+      swap_refcount[slot]--;
+      release(&swaplock);
+    }
+    
+    // Free the pages too while at it.
+    else if (*cpte & PTE_P) {
+      uint cpg = PTE_ADDR(*cpte);
+      *cpte = 0;
+      kfree((char*)P2V(cpg));
+    }
+  }
+
   freevm(d);
   return 0;
 }
