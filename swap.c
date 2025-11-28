@@ -48,16 +48,33 @@ find_free_swapslot(void)
 }
 
 void
-read_from_swap(char *buf, uint off)
+read_from_swap(uint page_index, char *dst)
 {
-  
+	page_index--;
+    uint sector_start = page_index * 8;
+    for(int i = 0; i < 8; i++){
+        struct buf *b = bread(2, sector_start + i);
+        memmove(dst + (i * 512), b->data, 512);
+        brelse(b);
+    }
+    uint idx=page_index/32;
+	uint off=page_index-idx*32;
+    acquire(&swaplock);
+	swapmap[idx] &= ~(1<<off);
+	release(&swaplock);
+    
 }
 
-uint
-write_to_swap(char *buf)
+void
+write_to_swap(char *page)
 {
-  uint ss_off;
-  acquire(&swaplock);
-  if(!(ss_off = find_free_swapslot()))
-    return 0;
+    uint sector_start = (find_free_slot()-1)* 8;
+
+    for(int i = 0; i < 8; i++){
+        struct buf *b = bread(2,sector_start + i);
+        memmove(b->data, page + (i * 512), 512);
+        bwrite(b);
+        brelse(b);
+    }
 }
+
