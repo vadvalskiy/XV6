@@ -10,17 +10,8 @@
 #include "fs.h"
 #include "buf.h"
 
-struct spinlock ramlock;
 struct spinlock swaplock;
-
-uint rammap[RAMMAP_PAGES];
 uint8_t swapmap[SWAP_PAGES];
-
-void
-raminit()
-{
-  initlock(&ramlock, "rammap");
-}
 
 void
 swapinit()
@@ -62,10 +53,11 @@ read_from_swap(uint page_index, char *dst)
 	release(&swaplock);
 }
 
-void
+uint
 write_to_swap(char *page)
 {
-  uint sector_start = (find_free_slot()-1)*8;
+  uint page_index=find_free_slot();
+  uint sector_start = (page_index-1)*8;
 
   for(int i = 0; i < 8; i++){
     struct buf *b = bread(2,sector_start + i);
@@ -73,4 +65,5 @@ write_to_swap(char *page)
     bwrite(b);
     brelse(b);
   }
+  return page_index;
 }

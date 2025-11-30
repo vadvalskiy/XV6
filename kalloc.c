@@ -8,6 +8,7 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "spinlock.h"
+#include "swap.h"
 
 void freerange(void *vstart, void *vend);
 extern char end[]; // first address after kernel loaded from ELF file
@@ -23,6 +24,12 @@ struct {
   struct run *freelist;
 } kmem;
 
+struct {
+  struct spinlock lock;
+  int use_lock;
+  uint map[RAMMAP_PAGES];
+} rammap;
+
 // Initialization happens in two phases.
 // 1. main() calls kinit1() while still using entrypgdir to place just
 // the pages mapped by entrypgdir on free list.
@@ -32,7 +39,9 @@ void
 kinit1(void *vstart, void *vend)
 {
   initlock(&kmem.lock, "kmem");
+  initlock(&rammap.lock, "rammap");
   kmem.use_lock = 0;
+  rammap.use_lock = 0;
   freerange(vstart, vend);
 }
 
@@ -41,6 +50,7 @@ kinit2(void *vstart, void *vend)
 {
   freerange(vstart, vend);
   kmem.use_lock = 1;
+  rammap.use_lock = 1;
 }
 
 void
@@ -76,9 +86,11 @@ kfree(char *v)
     release(&kmem.lock);
 
   // Mark page as free in rammap.
-  acquire(&ramlock);
-  rammap[PA_2_RDX(V2P((uint)v))] = 0;
-  release(&ramlock);
+  if(rammap.use_lock)
+    acquire(&rammap.lock);
+  rammap.map[PA_2_RDX(V2P((uint)v))] = 0;
+  if(rammap.use_lock)
+    release(&rammap.lock);
 }
 
 // Returns the PA of the evicted page in RAM
@@ -89,7 +101,7 @@ evict_page(void)
   uint victim_idx = -1;
 
   // Choose a victim to evict
-  acquire(&ramlock);
+  acquire(&rammap.lock);
   for(int i = RAMMAP_PAGES - 1; i >= 0; i--) {
     if(SWAP_BIT(rammap[i])) {
       victim_entry = rammap[i];
@@ -97,14 +109,14 @@ evict_page(void)
       break;
     }
   }
-  release(&ramlock);
+  release(&rammap.lock);
 
   // No swappable pages found
   if(victim_idx < 0)
     return 0;
 
-  // Find out the owner pid and the virtual address
-  // which this page is mapped to.
+  // Find out the owner pid and the virtual
+  // address(vpn) which this page is mapped to.
   uint pid = GET_PID(victim_entry);
   uint va = PTE_ADDR(victim_entry);
   uint pa = RDX_2_PA(victim_idx);
@@ -120,23 +132,27 @@ evict_page(void)
   }
   release(&ptable.lock);
 
-  // Write contents of the page to swapspace
-  // get the offset.
-  acquire(&swaplock);
-  uint off = write_to_swap(P2V(pa));
-  release(&swaplock);
+  if(!vproc)
+    panic("corrupt rammap");
 
-  // Store the page-aligned swapspace offset into
-  // the PTE corresponding to the evicted page in
+  // Write contents of the page to swapspace
+  // record the swapslot index where the page
+  // was written.
+  uint slot = write_to_swap(P2V(pa));
+
+  // Store the swapslot index into the PTE
+  // corresponding to the evicted page in
   // owner process's address space.
   pte_t *pte = walkpgdir(vproc->pgdir, va, 0);
-  perms = *pte & ~(0xFFF);
-  *pte = ((off << 12) | (perms & ~PTE_P));
+  if(!pte)
+    panic("corrupt rammap");
+  *pte = ((slot << 12) | PTE_FLAGS(*pte));
 
-  // Finally updated rammap as free.
-  acquire(&ramlock);
-  rammap[victim_idx] = 0;
-  release(&ramlock);
+  // Finally update corresponding rammap entry
+  // of the page as free.
+  acquire(&rammap.lock);
+  rammap.map[victim_idx] = 0;
+  release(&rammap.lock);
 
   // Return the physical address of the now free page.
   return pa;
@@ -158,26 +174,31 @@ kalloc()
     kmem.freelist = r->next;
     if(kmem.use_lock)
       release(&kmem.lock);
-
-    // mark page to be owned by kernel initially
-    acquire(&ramlock);
-    rammap[PA_2_RDX(V2P(r))] = PACK(0, PID_KERNEL, 0);
-    release(&ramlock);
-
-    return (char*)r;
   }
 
   // No free pages found
-  if(kmem.use_lock)
-    release(&kmem.lock);
+  else {
+    // Choose and evict a page from RAM
+    // to swapspace and get the PA of the
+    // now free RAM frame.
+    uint pa = evict_page();
 
-  uint pa = evict_page();
-  if(pa == 0)
-    return 0;
+    // Can't evict any page from RAM
+    // kalloc() fails as normal here.
+    if(!pa)
+      return 0;
+    r = (struct run*)P2V((char*)pa);
 
-  acquire(&ramlock);
-  rammap[PA_2_RDX(pa)] = PACK(0, PID_KERNEL, 0);
-  release(&ramlock);
+    // Clear the page before returning.
+    memset((char*)r, 0, PGSIZE);
+  }
 
-  return (char*)P2V(pa);
+  // mark page to be owned by kernel initially
+  if(rammap.use_lock)
+    acquire(&rammap.lock);
+  rammap.map[PA_2_RDX(V2P(r))] = PACK(0, PID_KERNEL, 0);
+  if(rammap.use_lock)
+    release(&rammap.lock);
+
+  return (char*)r;
 }

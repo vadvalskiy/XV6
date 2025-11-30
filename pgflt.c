@@ -35,7 +35,7 @@ loadpage(struct inode *ip, uint flt_addr, char *pa, struct loadseg *ls)
 {
   // If issued address lies between vaddr + filesz and
   // vaddr + memsz, nothing to load here. Simply return.
-  if(flt_addr >= ls->vaddr + ls->filesz)
+  if(PGROUNDDOWN(flt_addr) >= ls->vaddr + ls->filesz)
     return 0;
 
   // If size of content to be loaded in less than PGSIZE,
@@ -65,12 +65,9 @@ check_stack_access(struct elfprof *ep, uint flt_addr)
 {
   uint guard_pg = PGROUNDUP(ep->end_vaddr);
   uint stack_pg = guard_pg + PGSIZE;
-  uint heap_pg = stack_pg + PGSIZE;
 
-  if(flt_addr < guard_pg || flt_addr >= heap_pg)
+  if(flt_addr < guard_pg || flt_addr >= stack_pg)
     return 0;
-  if(flt_addr >= stack_pg)
-    panic("where is the stack?!");
   return -1;
 }
 

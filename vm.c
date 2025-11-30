@@ -6,6 +6,7 @@
 #include "mmu.h"
 #include "proc.h"
 #include "elf.h"
+#include "swap.h"
 
 extern char data[];  // defined by kernel.ld
 pde_t *kpgdir;  // for use in scheduler()
@@ -74,10 +75,15 @@ mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
     // Don't prematurely mark pages as available in PTE.
     *pte = pa | perm;
 
+    // If the page to be mapped has user permissions enabled
+    // It is a page which will be accessed by user processes
+    // hence, it should be swappable.
     if(perm & PTE_U) {
-      acquire(&ramlock);
+      if(rammap.use_lock)
+        acquire(&rammap.lock);
       rammap[PA_2_RDX(pa)] = PACK(PTE_ADDR((uint)a), myproc()->pid, 1);
-      release(&ramlock);
+      if(rammap.use_lock)
+        release(&rammap.lock);
     }
 
     if(a == last)
@@ -295,16 +301,41 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
   a = PGROUNDUP(newsz);
   for(; a  < oldsz; a += PGSIZE){
     pte = walkpgdir(pgdir, (char*)a, 0);
-    if(!pte || !(*pte & PTE_P))
+
+    // If page table is not allocated for this PDE
+    /* Since we are implementing pure demand paging
+      where even the page tables may not be allocated
+      beforehand, so walkpgdir() can't find the PTE
+      for such cases and return 0.*/
+    // Just skip to the next PDE
+    if(!pte)
       a = PGADDR(PDX(a) + 1, 0, 0) - PGSIZE;
+
+    // If page is not allocated for this PTE
+    // Nothing to do, just continue
+    else if(!*pte)
+      continue;
+
+    // If page is swapped out and currently exists
+    // in the swapspace.
+    // Just decrement the swapslot refcount.
+    else if(!(*pte & PTE_P)) {
+      uint slot = GET_SWAPSLOT((uint)*pte);
+      acquire(&swaplock);
+      swapmap[slot]--;
+      release(&swaplock);
+    }
+
+    // If page is allocated for this PTE and present
+    // in the RAM
     else{
       pa = PTE_ADDR(*pte);
       if(pa == 0)
         panic("kfree");
       char *v = P2V(pa);
       kfree(v);
-      *pte = 0;
     }
+    *pte = 0;
   }
   return newsz;
 }
@@ -350,20 +381,57 @@ pde_t*
 copyuvm(pde_t *pgdir, uint sz)
 {
   pde_t *d;
-  pte_t *pte;
+  pte_t *pte, *new_pte;
   uint pa, i, flags;
   char *mem;
 
   if((d = setupkvm()) == 0)
     return 0;
   for(i = 0; i < sz; i += PGSIZE){
+    /* Here walkpgdir() would fail if PTE couldn't be
+      found for given address.*/
+    // If no page table allocated for current PDE.
     if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
+      i = PGADDR(PDX(i) + 1, 0, 0) - PGSIZE;
+
+    // If page is not allocated for this PTE
+    // Nothing to copy, continue
+    else if(!*pte)
       continue;
+
+    // If the parent's page is currently swapped out.
+    else if(*pte & !PTE_P) {
+      // Get the slot number in swapspace from the PTE.
+      uint slot = GET_SWAPSLOT((uint)*pte);
+
+      acquire(&swaplock);
+      if(swapmap[slot] == MAX_REFCOUNT) {
+        release(&swaplock);
+        goto bad;
+      }
+      swapmap[slot]++;
+      release(&swaplock);
+
+      // Copy the swapslot index to the corresponding PTE
+      // of the child
+      /* Failure of walkpgdir() here usually means out of
+        memory, so abort copyuvm() and call freevm()*/
+      if((new_pte = walkpgdir(d, (char *)i, 1)) == 0) {
+        // revert the refcount increment done before
+        acquire(&swaplock);
+        swapmap[slot]--;
+        release(&swaplock);
+        goto bad;
+      }
+
+      // child PTE points to the same swapslot
+      *new_pte = *pte;
+    }
 
     // If a physical page is allocated for the parent,
     // allocate a physical page for the child and copy
     // its contents. (no C.O.W in xv6)
-    if(*pte & PTE_P){
+    else {
       pa = PTE_ADDR(*pte);
       flags = PTE_FLAGS(*pte);
       if((mem = kalloc()) == 0)
@@ -374,59 +442,11 @@ copyuvm(pde_t *pgdir, uint sz)
         goto bad;
       }
     }
-
-    // If the parent's page is currently swapped out
-    else if(*pte & !PTE_P) {
-      // Get the slot number in swapspace.
-      uint slot = (PTE_ADDR(*pte) >> 12) - 1;
-
-
-      acquire(&swaplock);
-      if(swapmap[slot] == MAX_REFCOUNT) {
-        release(&swaplock);
-        goto bad;
-      }
-      swaplock[slot]++;
-      release(&swaplock);
-      
-      // create the child's PTE as an exact copy of the parent's swapped PTE
-      if((new_pte = walkpgdir(d, (char *)i, 1)) == 0) {
-        // rollback increment
-        acquire(&swaplock);
-        swap_refcount[slot]--;
-        release(&swaplock);
-        goto bad;
-      }
-      // child PTE points to the same swap slot
-      *npte = *pte;
-    }
   }
 
   return d;
 
 bad:
-  // Undo any swapslot refcount increments performed for pages < i.
-  // Walk child's page table entries up to i and decrement refcounts for swapped PTEs.
-  for(uint j = 0; j < i; j += PGSIZE){
-    pte_t *cpte = walkpgdir(d, (char *)j, 0);
-    if(cpte == 0)
-      continue;
-    if(*cpte & PTE_SWAPPED){
-      uint slot = (PTE_ADDR(*cpte) >> 12) - 1;
-
-      acquire(&swaplock);
-      swap_refcount[slot]--;
-      release(&swaplock);
-    }
-
-    // Free the pages too while at it.
-    else if (*cpte & PTE_P) {
-      uint cpg = PTE_ADDR(*cpte);
-      *cpte = 0;
-      kfree((char*)P2V(cpg));
-    }
-  }
-
   freevm(d);
   return 0;
 }
