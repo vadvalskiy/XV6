@@ -1,29 +1,34 @@
 #Proyecto Final – Sistema Operativo XV6 
 
 
+Como ingresar desde windows
+
 # 1. Instalar WSL y Ubuntu
 
 Ejecutar en **PowerShell como administrador**:
 
 
-wsl --install
+>> wsl --install
 
 Luego reiniciar.
 
 Para confirmar WSL 2:
 
 
-wsl --set-default-version 2
+>> wsl --set-default-version 2
+
+
 
 
 Para iniciar Ubuntu:
 
-
-wsl
+>> wsl
 
 ---
 
 
+
+Ingreso desde linux en este punto tambien
 
 
 # 2. Instalar paquetes necesarios dentro de Ubuntu
@@ -31,21 +36,23 @@ wsl
 En la terminal de Ubuntu:
 
 
-sudo apt update
-sudo apt install build-essential gcc-multilib qemu-system-x86 git make
+>> sudo apt update
+>> sudo apt install build-essential gcc-multilib qemu-system-x86 git make
 
 
-> Esto instala compiladores de 32 bits, make y QEMU.
+Esto instala compiladores de 32 bits, make y QEMU.
 
 ---
+
+
 
 
 
 # Clonar repo
 
 
-git clone https://github.com/juan-marin-19/proyecto-final-OS.git
-cd proyecto-final-OS
+>> git clone https://github.com/juan-marin-19/proyecto-final-OS.git
+>> cd proyecto-final-OS
 
 
 
@@ -83,7 +90,6 @@ init: starting sh
 $
 
 
-```
 
 Eso significa que el sistema operativo está corriendo.
 
@@ -96,12 +102,19 @@ Eso significa que el sistema operativo está corriendo.
 
 # 7. Hacer cambios en XV6 en ubuntu
 
+salimos del os usando:
+
+exit
+
+
 
 cambiamos el so con comandos como:
 
 nano proc.c
 
-luego recompilamos:
+
+
+recompilamos:
 
 make clean
 make qemu-nox
@@ -113,12 +126,14 @@ make qemu-nox
 
 # 8. Subir los cambios a GitHub
 
-Guardar cambios:
+Guardamos cambios leugo de modificar archivos:
 
-```bash
+
 git add .
 git commit -m "Descripción del cambio"
 git push
+
+
 ```
 
 Si pide autenticación, usamos **GitHub Personal Access Token (PAT)** como contraseña.
@@ -126,6 +141,7 @@ Si pide autenticación, usamos **GitHub Personal Access Token (PAT)** como contr
 
 
  
+
 
 
 
