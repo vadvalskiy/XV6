@@ -1,7 +1,7 @@
-#Proyecto Final – Sistema Operativo XV6 
+#  Proyecto Final – Sistema Operativo XV6 
 
 
- 				Como ingresar desde windows
+Como ingresar desde windows:
 
 # 1. Instalar WSL y Ubuntu
 
@@ -10,10 +10,9 @@ Ejecutar en **PowerShell como administrador**:
 
 >> wsl --install
 
-Luego reiniciar.
+Luego reiniciar el pc.
 
 Para confirmar WSL 2:
-
 
 >> wsl --set-default-version 2
 
@@ -24,63 +23,61 @@ Para iniciar Ubuntu:
 
 >> wsl
 
----
+si no funciona:
+
+>> wsl --set-default Ubuntu
+-------------------------------------------------------------
 
 
 
-Ingreso desde linux en este punto tambien
-
+Ingreso desde linux en este punto tambien:
 
 # 2. Instalar paquetes necesarios dentro de Ubuntu
 
 En la terminal de Ubuntu:
-
 
 >> sudo apt update
 >> sudo apt install build-essential gcc-multilib qemu-system-x86 git make
 
 
 Esto instala compiladores de 32 bits, make y QEMU.
-
----
-
+-------------------------------------------------------------
 
 
 
+Paso a repetir para usuarios windows cada que se acceda a wsl:
 
 # Clonar repo
 
-
 >> git clone https://github.com/juan-marin-19/proyecto-final-OS.git
 >> cd proyecto-final-OS
+-------------------------------------------------------------
 
 
 
+# 4.  Configurar Git (solo la primera vez)
 
-# 4. (Solo la primera vez) Configurar Git
-
-
-git config --global user.name "Nombre del usuario"
-git config --global user.email "correo@ejemplo.com"
----
+>> git config --global user.name "Nombre del usuario"
+>> git config --global user.email "correo@ejemplo.com"
+-------------------------------------------------------------
 
 
 
 # 5. Instalar script de firma (si fuese necesario)
 
-El proyecto usa `sign.pl`, asegúrate de tenerlo ejecutable:
+El proyecto usa `sign.pl`:
 
 
-chmod +x sign.pl
-chmod +x *.pl
+>> chmod +x sign.pl
+>> chmod +x *.pl
+-------------------------------------------------------------
 
----
+
 
 # 6. Compilar el Sistema Operativo XV6
 
-
-make clean
-make qemu-nox
+>> make clean
+>> make qemu-nox
 
 
 Si todo funciona, se debería ver:
@@ -89,58 +86,52 @@ Si todo funciona, se debería ver:
 init: starting sh
 $
 
-
-
 Eso significa que el sistema operativo está corriendo.
-
----
-
+-------------------------------------------------------------
 
 
 
+# 7. Hacer cambios en XV6 en ubuntu usando la terminal:
 
+salimos del so usando:
 
-# 7. Hacer cambios en XV6 en ubuntu
-
-salimos del os usando:
-
-exit
-
+>> exit
 
 
 cambiamos el so con comandos como:
 
-nano proc.c
+>> nano proc.c
 
 
 
-recompilamos:
+recompilamos y volmemos al so:
 
-make clean
-make qemu-nox
-
---- 
+>> make clean
+>> make qemu-nox
+-------------------------------------------------------------
 
 
 
 
 # 8. Subir los cambios a GitHub
 
-Guardamos cambios leugo de modificar archivos:
+Guardamos cambios luego de modificar archivos en Ubuntu:
 
 
-git add .
-git commit -m "Descripción del cambio"
-git push
+>> git add .
+>> git commit -m "Descripción cambio"
+>> git push
+-------------------------------------------------------------
 
 
-```
 
-Si pide autenticación, usamos **GitHub Personal Access Token (PAT)** como contraseña.
+Si pide autenticación, usamos **GitHub Personal Access Token (PAT)** como contraseña. 
+creamos un token y guardamos la llave(damos permisos de escritura y lectura)
 
 
 
  
+
 
 
 
