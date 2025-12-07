@@ -43,17 +43,25 @@ sys_getpid(void)
 }
 
 int
-sys_sbrk(void)
-{
+sys_sbrk(void) {
   int addr;
   int n;
 
   if(argint(0, &n) < 0)
     return -1;
-  addr = myproc()->sz;
-  if(growproc(n) < 0)
-    return -1;
-  return addr;
+
+  addr = myproc()->sz;  // Guardar tamaño actual
+
+  if (n > 0) {
+    // Caso positivo: crecimiento "perezoso"
+    myproc()->sz = myproc()->sz + n;  // Solo actualizar el tamaño
+  } else {
+    // Caso negativo: decrecimiento real
+    if(growproc(n) < 0)
+      return -1;
+  }
+
+  return addr;  // Retornar la dirección antigua
 }
 
 int
