@@ -78,6 +78,36 @@ trap(struct trapframe *tf)
     lapiceoi();
     break;
 
+    case T_PGFLT:
+    {
+      // 1. Obtener la dirección que causó el fallo
+      uint fault_addr = rcr2();
+
+      // 2. Validar que esté dentro del espacio de direcciones
+      if (fault_addr >= myproc()->sz) {
+        // Dirección inválida: terminar el proceso
+        cprintf("pid %d %s: invalid memory access at 0x%x\n",
+                myproc()->pid, myproc()->name, fault_addr);
+        myproc()->killed = 1;
+        break;
+      }
+
+      // 3. Redondear al inicio de la página
+      uint page_start = PGROUNDDOWN(fault_addr);
+
+      // 4. Asignar exactamente una página (4096 bytes)
+      if (allocuvm(myproc()->pgdir, page_start, page_start + PGSIZE) == 0) {
+        // Fallo al asignar memoria (sin RAM disponible)
+        cprintf("pid %d %s: out of memory\n",
+                myproc()->pid, myproc()->name);
+        myproc()->killed = 1;
+        break;
+      }
+
+      // 5. Éxito: la memoria fue asignada, el proceso puede continuar
+      break;
+    }
+
   //PAGEBREAK: 13
   default:
     if(myproc() == 0 || (tf->cs&3) == 0){
