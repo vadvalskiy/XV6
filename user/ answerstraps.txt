@@ -1,0 +1,6 @@
+1.a0;a2
+2.the compiler inline functions,dose not call f() and g()
+3.0x68a
+4.0X4a;0X5e
+5.If the RISC-V were instead big-endian,it doesn't need to change 57616,but needs to change i to 0X726c6400.
+6.缺少参数
