@@ -83,9 +83,6 @@ kalloc(void)
   r = kmem.freelist;
   if(r)
     kmem.freelist = r->next;
-  else {
-    panic("Out of memory!");
-  }
   
   if(kmem.use_lock)
     release(&kmem.lock);
