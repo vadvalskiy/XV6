@@ -88,7 +88,7 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
-
+  p->priority = 1;
   release(&ptable.lock);
 
   // Allocate kernel stack.
@@ -531,4 +531,24 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+int
+setpriority(int pid, int prio)
+{
+  struct proc *p;
+
+  if(prio < 0 || prio > 2)
+    return -1;
+
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state != UNUSED && p->pid == pid){
+      p->priority = prio;
+      release(&ptable.lock);
+      return 0;
+    }
+  }
+  release(&ptable.lock);
+  return -1;
 }
