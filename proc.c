@@ -541,17 +541,15 @@ int
 setpriority(int pid, int prio)
 {
   struct proc *p;
-  int found = 0;
 
-  acquire(&ptable.lock);
+  acquire(&ptable.lock); // Correctly synchronize access 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->pid == pid && p->state != UNUSED){
-      p->priority = prio;
-      found = 1;
-      break;
+    if(p->pid == pid && p->state != UNUSED){ // PID found and active [cite: 22]
+      p->priority = prio; 
+      release(&ptable.lock);
+      return 0; // Success [cite: 14]
     }
   }
   release(&ptable.lock);
-
-  return found ? 0 : -1;
+  return -1; // PID not found [cite: 15, 22]
 }

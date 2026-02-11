@@ -32,5 +32,5 @@ int main(void) {
     printf(1, "Invalid PID 9999: FAIL\n");
     
   printf(1, "Tests done.\n");
-  exit(); //dd
-} 
+  exit();
+}
