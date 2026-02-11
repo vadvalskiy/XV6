@@ -89,6 +89,8 @@ found:
   p->state = EMBRYO;
   p->pid = nextpid++;
 
+  p->priority = 1;
+
   release(&ptable.lock);
 
   // Allocate kernel stack.
@@ -199,6 +201,7 @@ fork(void)
   np->sz = curproc->sz;
   np->parent = curproc;
   *np->tf = *curproc->tf;
+  np->priority = curproc->priority;
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
@@ -531,4 +534,24 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+// helper function to set priority
+int
+setpriority(int pid, int prio)
+{
+  struct proc *p;
+  int found = 0;
+
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->pid == pid && p->state != UNUSED){
+      p->priority = prio;
+      found = 1;
+      break;
+    }
+  }
+  release(&ptable.lock);
+
+  return found ? 0 : -1;
 }

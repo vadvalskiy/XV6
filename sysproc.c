@@ -89,3 +89,20 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+int
+sys_setpriority(void)
+{
+  int pid, prio;
+
+  // Extract arguments
+  if(argint(0, &pid) < 0 || argint(1, &prio) < 0)
+    return -1;
+
+  // Validate priority range {0, 1, 2} [cite: 18, 23]
+  if(prio < 0 || prio > 2)
+    return -1;
+
+  // Call the helper function in proc.c
+  return setpriority(pid, prio);
+}
