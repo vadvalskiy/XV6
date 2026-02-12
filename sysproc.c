@@ -94,14 +94,12 @@ int
 sys_setpriority(void)
 {
   int pid, prio;
-
-  // Retrieve arguments: 0 is PID, 1 is Priority [cite: 16, 17, 18]
+  
   if(argint(0, &pid) < 0 || argint(1, &prio) < 0)
-    return -1; // System call argument parsing fails [cite: 24]
-
-  // Validate priority range {0, 1, 2} [cite: 18, 19]
+    return -1;
+  
   if(prio < 0 || prio > 2)
-    return -1; // Priority outside allowed range [cite: 23]
+    return -1; 
 
-  return setpriority(pid, prio); // Call the kernel logic in proc.c
+  return setpriority(pid, prio); 
 }

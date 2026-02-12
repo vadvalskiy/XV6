@@ -536,20 +536,19 @@ procdump(void)
   }
 }
 
-// helper function to set priority
 int
 setpriority(int pid, int prio)
 {
   struct proc *p;
 
-  acquire(&ptable.lock); // Correctly synchronize access 
+  acquire(&ptable.lock); 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->pid == pid && p->state != UNUSED){ // PID found and active [cite: 22]
+    if(p->pid == pid && p->state != UNUSED){ 
       p->priority = prio; 
       release(&ptable.lock);
-      return 0; // Success [cite: 14]
+      return 0; 
     }
   }
   release(&ptable.lock);
-  return -1; // PID not found [cite: 15, 22]
+  return -1; 
 }

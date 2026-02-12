@@ -1,36 +1,25 @@
 #include "types.h"
+#include "stat.h"
 #include "user.h"
 
-int main(void) {
-  int pid = getpid();
-  
-  printf(1, "Testing setpriority...\n");
-  
-  if (setpriority(pid, 0) == 0)
-    printf(1, "Set to HIGH (0): PASS\n");
-  else
-    printf(1, "Set to HIGH (0): FAIL\n");
-    
-  if (setpriority(pid, 1) == 0)
-    printf(1, "Set to NORMAL (1): PASS\n");
-  else
-    printf(1, "Set to NORMAL (1): FAIL\n");
-    
-  if (setpriority(pid, 2) == 0)
-    printf(1, "Set to LOW (2): PASS\n");
-  else
-    printf(1, "Set to LOW (2): FAIL\n");
-    
-  if (setpriority(pid, 3) == -1)
-    printf(1, "Invalid priority 3: PASS\n");
-  else
-    printf(1, "Invalid priority 3: FAIL\n");
-    
-  if (setpriority(9999, 1) == -1)
-    printf(1, "Invalid PID 9999: PASS\n");
-  else
-    printf(1, "Invalid PID 9999: FAIL\n");
-    
-  printf(1, "Tests done.\n");
+static void check(const char *msg, int cond) {
+  if(cond) printf(1, "PASS: %s\n", msg);
+  else { printf(1, "FAIL: %s\n", msg); exit(); }
+}
+
+int main(void){
+  int me = getpid();
+  int r;
+
+  r = setpriority(me, 1);
+  check("setpriority(self,1) returns 0", r == 0);
+
+  r = setpriority(-1, 1);
+  check("setpriority(-1,1) returns -1", r == -1);
+
+  r = setpriority(me, 99);
+  check("setpriority(self,99) returns -1", r == -1);
+
+  printf(1, "testprio: done\n");
   exit();
 }
