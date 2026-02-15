@@ -14,6 +14,8 @@
 // to a saved program counter, and then the first argument.
 
 // Fetch the int at addr from the current process.
+extern int sys_settickets(void);
+
 int
 fetchint(uint addr, int *ip)
 {
@@ -126,6 +128,8 @@ static int (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_settickets]   sys_settickets,
+
 };
 
 void

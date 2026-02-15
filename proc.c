@@ -7,6 +7,17 @@
 #include "proc.h"
 #include "spinlock.h"
 
+static unsigned int randstate = 1;
+// Simple deterministic PRNG for lottery scheduling
+
+
+int
+rand(void)
+{
+  randstate = randstate * 1664525 + 1013904223;
+  return randstate;
+}
+
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
@@ -88,6 +99,7 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->tickets = 1;   // default ticket count
 
   release(&ptable.lock);
 
@@ -111,6 +123,8 @@ found:
   p->context = (struct context*)sp;
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
+
+  p->tickets = 1;
 
   return p;
 }
@@ -319,41 +333,59 @@ wait(void)
 //  - swtch to start running that process
 //  - eventually that process transfers control
 //      via swtch back to the scheduler.
-void
+
+ void
 scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;
-  
+
   for(;;){
-    // Enable interrupts on this processor.
+    // Enable interrupts
     sti();
 
-    // Loop over process table looking for process to run.
     acquire(&ptable.lock);
+
+    int total = 0;
+
+    // Step 1: compute total tickets of RUNNABLE processes
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
-
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
-
-      swtch(&(c->scheduler), p->context);
-      switchkvm();
-
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
-      c->proc = 0;
+      if(p->state == RUNNABLE)
+        total += p->tickets;
     }
-    release(&ptable.lock);
 
+    if(total > 0){
+      int winner = rand() % total;
+      int running_sum = 0;
+
+      // Step 2: find the winning process
+      for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+        if(p->state != RUNNABLE)
+          continue;
+
+        running_sum += p->tickets;
+
+        if(running_sum > winner){
+          // Switch to chosen process (original xv6 logic preserved)
+          c->proc = p;
+          switchuvm(p);
+          p->state = RUNNING;
+
+          swtch(&(c->scheduler), p->context);
+          switchkvm();
+
+          c->proc = 0;
+          break;
+        }
+      }
+    }
+
+    release(&ptable.lock);
   }
 }
+
+
 
 // Enter scheduler.  Must hold only ptable.lock
 // and have changed proc->state. Saves and restores

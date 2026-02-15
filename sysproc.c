@@ -76,7 +76,21 @@ sys_sleep(void)
   release(&tickslock);
   return 0;
 }
+int
+sys_settickets(void)
+{
+  int n;
+  if(argint(0, &n) < 0)
+    return -1;
 
+  if(n < 1)
+    return -1;
+
+  struct proc *p = myproc();
+  p->tickets = n;
+
+  return 0;
+}
 // return how many clock tick interrupts have occurred
 // since start.
 int
