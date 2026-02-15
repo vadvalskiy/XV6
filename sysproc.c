@@ -12,6 +12,11 @@ sys_fork(void)
 {
   return fork();
 }
+int
+sys_getticks(void)
+{
+    return ticks;
+}
 
 int
 sys_exit(void)
