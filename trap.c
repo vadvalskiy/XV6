@@ -54,7 +54,14 @@ trap(struct trapframe *tf)
       wakeup(&ticks);
       release(&tickslock);
     }
+if(myproc() && (tf->cs &3)==3)
+{
+  myproc()->tickcounts++;
+  myproc()->runtimeDeadline++;
+}
+
     lapiceoi();
+
     break;
   case T_IRQ0 + IRQ_IDE:
     ideintr();
