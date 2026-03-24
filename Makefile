@@ -52,7 +52,7 @@ endif
 
 # If the makefile can't find QEMU, specify its path here
 # QEMU = qemu-system-i386
-
+QEMU = /usr/libexec/qemu-kvm
 # Try to infer the correct QEMU
 ifndef QEMU
 QEMU = $(shell if which qemu > /dev/null; \
@@ -181,6 +181,8 @@ UPROGS=\
 	_usertests\
 	_wc\
 	_zombie\
+	_testkaccess\
+	_testnull\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
