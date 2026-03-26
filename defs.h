@@ -106,8 +106,26 @@ int             pipewrite(struct pipe*, char*, int);
 int             cpuid(void);
 void            exit(void);
 int             fork(void);
+
+
+// implementation of clone system call
+int             clone(int (*func)(void *args), void *child_stack, int flags, void *args);
+// implementation of join system call
+int             join(int tid);
+
+
 int             growproc(int);
 int             kill(int);
+// killing a thread
+int             tkill(int tid);
+// killing whole thread group
+int             tgkill();
+// thread suspending it's exceution
+int             tsuspend(void);
+// make thread resume it's execution 
+int             tresume(int tid);
+
+
 struct cpu*     mycpu(void);
 struct proc*    myproc();
 void            pinit(void);
@@ -181,6 +199,12 @@ void            freevm(pde_t*);
 void            inituvm(pde_t*, char*, uint);
 int             loaduvm(pde_t*, char*, struct inode*, uint, uint);
 pde_t*          copyuvm(pde_t*, uint);
+
+// brief clone memory region execpt the stack frame 
+char*           cloneuvm(pde_t* pgdir, uint size, char *guard_page);
+void            freecloneuvm(pde_t *pgdir, char *tstack);
+int             copy_thread_stack(pde_t *dest, char *dest_stack, pde_t *src, char *src_stack);
+
 void            switchuvm(struct proc*);
 void            switchkvm(void);
 int             copyout(pde_t*, uint, void*, uint);

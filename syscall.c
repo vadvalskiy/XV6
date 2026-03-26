@@ -3,6 +3,8 @@
 #include "param.h"
 #include "memlayout.h"
 #include "mmu.h"
+#include "spinlock.h"
+#include "sleeplock.h"
 #include "proc.h"
 #include "x86.h"
 #include "syscall.h"
@@ -18,9 +20,17 @@ int
 fetchint(uint addr, int *ip)
 {
   struct proc *curproc = myproc();
+  // process stack address space 
+  if(curproc->tid == -1) {
+    if(addr >= (uint)curproc->sz || addr+4 > (uint)curproc->sz)
+      return -1;
+  } 
+  // thread stack address space 
+  else {
+    if(addr >= (uint)curproc->tstack || addr+4 > (uint)curproc->tstack)
+      return -1;
+  }
 
-  if(addr >= curproc->sz || addr+4 > curproc->sz)
-    return -1;
   *ip = *(int*)(addr);
   return 0;
 }
@@ -33,9 +43,17 @@ fetchstr(uint addr, char **pp)
 {
   char *s, *ep;
   struct proc *curproc = myproc();
+  // process stack address space 
+  if(curproc->tid == -1) {
+    if(addr >= (uint)curproc->sz)
+      return -1;
+  } 
+  // thread stack address space  
+  else {
+    if(addr >= (uint)curproc->tstack)
+      return -1;
+  }
 
-  if(addr >= curproc->sz)
-    return -1;
   *pp = (char*)addr;
   ep = (char*)curproc->sz;
   for(s = *pp; s < ep; s++){
@@ -63,8 +81,16 @@ argptr(int n, char **pp, int size)
  
   if(argint(n, &i) < 0)
     return -1;
-  if(size < 0 || (uint)i >= curproc->sz || (uint)i+size > curproc->sz)
-    return -1;
+  // process stack address space 
+  if(curproc->tid == -1) {
+    if(size < 0 || (uint)i >= (uint)curproc->sz || (uint)i + size > (uint)curproc->sz)
+      return -1;
+  } 
+  // thread stack address space 
+  else {
+    if(size < 0 || (uint)i >= (uint)curproc->tstack || (uint)i+size > (uint)curproc->tstack) 
+      return -1;
+  }
   *pp = (char*)i;
   return 0;
 }
@@ -103,6 +129,13 @@ extern int sys_unlink(void);
 extern int sys_wait(void);
 extern int sys_write(void);
 extern int sys_uptime(void);
+extern int sys_clone(void);
+extern int sys_join(void);
+extern int sys_gettid(void);
+extern int sys_tkill(void);
+extern int sys_tgkill(void);
+extern int sys_tsuspend(void);
+extern int sys_tresume(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -126,6 +159,13 @@ static int (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_clone]   sys_clone,
+[SYS_join]    sys_join,
+[SYS_gettid]  sys_gettid,
+[SYS_tkill]   sys_tkill,
+[SYS_tgkill]  sys_tgkill,
+[SYS_tsuspend] sys_tsuspend,
+[SYS_tresume] sys_tresume,
 };
 
 void

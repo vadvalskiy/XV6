@@ -2,6 +2,8 @@
 #include "param.h"
 #include "memlayout.h"
 #include "mmu.h"
+#include "spinlock.h"
+#include "sleeplock.h"
 #include "proc.h"
 #include "defs.h"
 #include "x86.h"
@@ -17,7 +19,50 @@ exec(char *path, char **argv)
   struct inode *ip;
   struct proghdr ph;
   pde_t *pgdir, *oldpgdir;
-  struct proc *curproc = myproc();
+  struct proc *curproc = myproc(), *p;
+  struct proc *tleader = LEADER_THREAD(curproc);
+
+  acquire(&ptable.lock);
+  
+  // thread calling exec
+  if(curproc->tid != -1) {
+    
+    // main leader now becomes peer in thread group
+    tleader->tid = curproc->tid;
+    
+    // current proc gets chance to become thread leader
+    curproc->tid = -1;
+    curproc->parent = tleader->parent;
+    
+    // all the childrens of tleader are attached to the new tleader
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      // child process for the group leader
+      if(p->parent == tleader && p->tid == -1){
+        p->parent = curproc;
+      }
+    }
+    
+    // all the threads now have new group leader 
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->pid == curproc->pid && p != curproc){
+        p->parent = curproc;
+        // also killing the thread at the same time
+        p->killed = 1;
+      }
+    }
+    
+    // free the kernel allocated stack page if any
+    if(curproc->tstackalloc){
+      freecloneuvm(curproc->pgdir, curproc->tstack);
+    }
+  }
+
+  release(&ptable.lock);
+    
+  // context switch here will not affect -> all peers threads have set killed 
+    
+  // wait utill all the threads in the group die
+  tgkill();
 
   begin_op();
 
@@ -67,7 +112,7 @@ exec(char *path, char **argv)
     goto bad;
   clearpteu(pgdir, (char*)(sz - 2*PGSIZE));
   sp = sz;
-
+    
   // Push argument strings, prepare rest of stack in ustack.
   for(argc = 0; argv[argc]; argc++) {
     if(argc >= MAXARG)
@@ -97,6 +142,10 @@ exec(char *path, char **argv)
   oldpgdir = curproc->pgdir;
   curproc->pgdir = pgdir;
   curproc->sz = sz;
+  // thread stack page of new process 
+  curproc->tstack = (char *)curproc->sz;
+  // stack is not allocated since it's not thread
+  curproc->tstackalloc = 0;
   curproc->tf->eip = elf.entry;  // main
   curproc->tf->esp = sp;
   switchuvm(curproc);

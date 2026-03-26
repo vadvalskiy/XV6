@@ -20,3 +20,11 @@
 #define SYS_link   19
 #define SYS_mkdir  20
 #define SYS_close  21
+#define SYS_clone  22
+#define SYS_join   23
+#define SYS_gettid 24
+#define SYS_tkill  25
+#define SYS_tgkill 26
+#define SYS_tsuspend 27
+#define SYS_tresume  28
+

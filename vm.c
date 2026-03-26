@@ -4,6 +4,8 @@
 #include "x86.h"
 #include "memlayout.h"
 #include "mmu.h"
+#include "spinlock.h"
+#include "sleeplock.h"
 #include "proc.h"
 #include "elf.h"
 
@@ -319,7 +321,7 @@ copyuvm(pde_t *pgdir, uint sz)
   pte_t *pte;
   uint pa, i, flags;
   char *mem;
-
+  
   if((d = setupkvm()) == 0)
     return 0;
   for(i = 0; i < sz; i += PGSIZE){
@@ -343,6 +345,135 @@ bad:
   freevm(d);
   return 0;
 }
+
+// cloneuvm simply creates a new stack by extending
+// current virtual address space in the page directory
+// returns starting address of new stack region otherwise 0
+char*
+cloneuvm(pde_t* pgdir, uint size, char *guard_page) 
+{
+    pte_t *pte, *guard_pte, *stack_pte;
+    char *stack_page;
+    char *va = (char *)KERNBASE - PGSIZE;
+    char *tstack;
+    
+    // find empty slot for allocated the stack 
+    while(1) {
+        pte = walkpgdir(pgdir, va, 0);
+        if(pte == 0) {
+            break;
+        }
+        if(!(*pte & PTE_P)) {
+            break;
+        }
+        if(va < (char *)size) {
+            break;
+        }
+        va = va - PGSIZE;
+    }
+    // kernel cannot currupt the process memory 
+    // could happen in case of stack crossing heap 
+    if(va < (char *)size) {
+        return 0;
+    }
+
+    // stack base address 
+    tstack = va + PGSIZE;  
+    
+    // now the new allocation of the stack for the cloned process
+    if((stack_pte = walkpgdir(pgdir, va, 1)) == 0) {
+        return 0; 
+    }
+    if((stack_page = kalloc()) == 0) {
+        return 0;
+    }
+    memset(stack_page, 0, PGSIZE);
+    *stack_pte = V2P(stack_page) | PTE_U | PTE_W | PTE_P;
+    
+    // guard page entry 
+    va -= PGSIZE;
+    if(va < (char *)size) {
+        *stack_pte = 0;
+        kfree(stack_page);
+        return 0;
+    }    
+    // allocate page table entry for guard page
+    if((pte = walkpgdir(pgdir, va, 1)) == 0) {
+        kfree(stack_page);
+        return 0;
+    }
+    // the guard page table entry of the original process 
+    if((guard_pte = walkpgdir(pgdir, guard_page, 0)) == 0) {
+        // every process should have a guard page
+        panic("guard page not found");
+    }
+    // SMART KERNEL : guard page is never reallcoated 
+    // rather page table entry for guard page is shared.
+    *pte = *guard_pte;
+    
+    // the base address of the new stack 
+    return tstack;
+}
+
+
+// frees the cloned process memory 
+// Only stack entry and guard page entry are removed.
+void
+freecloneuvm(pde_t *pgdir, char *tstack) 
+{
+    pte_t *pte;
+    char *page, *stack_page, *guard_page;
+    
+    // free the stack page entry for cloned process 
+    stack_page = tstack - PGSIZE; 
+    if((pte = walkpgdir(pgdir, stack_page, 0)) == 0) {
+        panic("clone process has no stack !!");
+    }
+    page = (char *)P2V(PTE_ADDR(*pte));
+    kfree(page); 
+    *pte = 0;
+     
+    guard_page = tstack - 2 * PGSIZE;
+    // erase the guard page entry of the stack
+    if((pte = walkpgdir(pgdir, guard_page, 0)) == 0) {
+        panic("clone process has no guard page !!");
+    }
+    // earising the guarding page entry 
+    // (remember kernel never allocated guard for cloned process)
+    *pte = 0;
+}
+
+// copies out the stack from the given two pgdirectory 
+int copy_thread_stack(pde_t *dest, char *dest_stack, pde_t *src, char *src_stack) {
+    pte_t *dest_stack_pte, *src_stack_pte;
+    char *dest_stack_addr, *src_stack_addr;
+
+    // no page found in the source directory 
+    if((src_stack_pte = walkpgdir(src, src_stack, 0)) == 0) {
+        return -1;
+    }
+    // no page exits in the source page table entry 
+    if(!(*src_stack_pte & PTE_P)) {
+        return -1;
+    }
+        
+    // no page found in the destination directory 
+    if((dest_stack_pte = walkpgdir(dest, dest_stack, 0)) == 0) {
+        return -1;
+    }
+    // no page exits in the destination page table entry 
+    if(!(*dest_stack_pte & PTE_P)) {
+        return -1;
+    }
+     
+    // find the virtuall address of the stack 
+    dest_stack_addr = (char *)P2V(PTE_ADDR(*dest_stack_pte));
+    src_stack_addr  = (char *)P2V(PTE_ADDR(*src_stack_pte));
+
+    memmove(dest_stack_addr, src_stack_addr, PGSIZE);
+    return 0;
+}
+
 
 //PAGEBREAK!
 // Map user virtual address to kernel address.

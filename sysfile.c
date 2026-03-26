@@ -9,10 +9,10 @@
 #include "param.h"
 #include "stat.h"
 #include "mmu.h"
-#include "proc.h"
-#include "fs.h"
 #include "spinlock.h"
 #include "sleeplock.h"
+#include "proc.h"
+#include "fs.h"
 #include "file.h"
 #include "fcntl.h"
 
@@ -52,6 +52,12 @@ fdalloc(struct file *f)
   return -1;
 }
 
+void 
+sys_hello(void) 
+{
+    cprintf("Hello system call\n");    
+}
+
 int
 sys_dup(void)
 {
@@ -84,9 +90,9 @@ sys_write(void)
   struct file *f;
   int n;
   char *p;
-
-  if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argptr(1, &p, n) < 0)
+  if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argptr(1, &p, n) < 0) {
     return -1;
+  }
   return filewrite(f, p, n);
 }
 
@@ -399,7 +405,7 @@ sys_exec(void)
   char *path, *argv[MAXARG];
   int i;
   uint uargv, uarg;
-
+  
   if(argstr(0, &path) < 0 || argint(1, (int*)&uargv) < 0){
     return -1;
   }

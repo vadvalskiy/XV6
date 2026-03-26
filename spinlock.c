@@ -6,8 +6,9 @@
 #include "x86.h"
 #include "memlayout.h"
 #include "mmu.h"
-#include "proc.h"
 #include "spinlock.h"
+#include "sleeplock.h"
+#include "proc.h"
 
 void
 initlock(struct spinlock *lk, char *name)
@@ -59,9 +60,9 @@ release(struct spinlock *lk)
   // stores; __sync_synchronize() tells them both not to.
   __sync_synchronize();
 
-  // Release the lock, equivalent to lk->locked = 0.
-  // This code can't use a C assignment, since it might
-  // not be atomic. A real OS would use C atomics here.
+  // release the lock, equivalent to lk->locked = 0.
+  // this code can't use a c assignment, since it might
+  // not be atomic. a real os would use c atomics here.
   asm volatile("movl $0, %0" : "+m" (lk->locked) : );
 
   popcli();

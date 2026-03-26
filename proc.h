@@ -40,7 +40,11 @@ struct proc {
   pde_t* pgdir;                // Page table
   char *kstack;                // Bottom of kernel stack for this process
   enum procstate state;        // Process state
-  int pid;                     // Process ID
+  int pid;                     // Process ID 
+  int tid;                     // Thread ID
+  char *tstack;                // Thread execution stack virtual address 
+  int tstackalloc;             // if non-zero, stack allocated by kernel 
+  struct spinlock tlock;       // Thread spin lock 
   struct proc *parent;         // Parent process
   struct trapframe *tf;        // Trap frame for current syscall
   struct context *context;     // swtch() here to run process
@@ -51,8 +55,21 @@ struct proc {
   char name[16];               // Process name (debugging)
 };
 
+struct table{
+  struct spinlock lock;
+  struct proc proc[NPROC];
+};
+
+// global variable ptable 
+extern struct table ptable;
+
 // Process memory is laid out contiguously, low addresses first:
 //   text
 //   original data and bss
 //   fixed-size stack
 //   expandable heap
+
+// macro for getting the thread leader 
+#define LEADER_THREAD(curpoc)  ((curpoc)->tid == -1 ? (curpoc) : (curpoc)->parent)
+
+
