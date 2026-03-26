@@ -65,6 +65,29 @@ myproc(void) {
   return p;
 }
 
+int
+settickets(int n)
+{
+  struct proc *p = myproc();
+  if(n < 1)
+    return -1;
+
+  acquire(&ptable.lock);
+  p->tickets = n;
+  release(&ptable.lock);
+
+  return 0;
+}
+
+static uint rand_seed = 1;
+
+static uint
+lcg_rand(void)
+{
+  rand_seed = rand_seed * 1664525 + 1013904223;
+  return rand_seed;
+}
+
 //PAGEBREAK: 32
 // Look in the process table for an UNUSED proc.
 // If found, change state to EMBRYO and initialize
@@ -78,9 +101,9 @@ allocproc(void)
 
   acquire(&ptable.lock);
 
-  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == UNUSED)
-      goto found;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+      if(p->state == UNUSED)
+        goto found;
 
   release(&ptable.lock);
   return 0;
@@ -88,6 +111,7 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->tickets = 1;
 
   release(&ptable.lock);
 
@@ -325,36 +349,59 @@ scheduler(void)
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;
-  
+
   for(;;){
     // Enable interrupts on this processor.
     sti();
 
-    // Loop over process table looking for process to run.
     acquire(&ptable.lock);
+
+    // 1) Sum tickets of RUNNABLE procs
+    int total = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->state == RUNNABLE)
+        total += p->tickets;
+    }
+
+    // Nothing to run
+    if(total == 0){
+      release(&ptable.lock);
+      continue;
+    }
+
+    // 2) Pick a winning ticket uniformly from [0, total)
+    uint winner = lcg_rand() % total;
+
+    // 3) Find the process whose ticket range includes winner
+    int running_sum = 0;
+    struct proc *chosen = 0;
+
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
         continue;
 
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
+      running_sum += p->tickets;
+      if(running_sum > (int)winner){
+        chosen = p;
+        break;
+      }
+    }
 
-      swtch(&(c->scheduler), p->context);
+    // 4) Run chosen
+    if(chosen){
+      c->proc = chosen;
+      switchuvm(chosen);
+      chosen->state = RUNNING;
+
+      swtch(&(c->scheduler), chosen->context);
       switchkvm();
 
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
       c->proc = 0;
     }
-    release(&ptable.lock);
 
+    release(&ptable.lock);
   }
 }
-
 // Enter scheduler.  Must hold only ptable.lock
 // and have changed proc->state. Saves and restores
 // intena because intena is a property of this

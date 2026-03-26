@@ -76,7 +76,13 @@ AS = $(TOOLPREFIX)gas
 LD = $(TOOLPREFIX)ld
 OBJCOPY = $(TOOLPREFIX)objcopy
 OBJDUMP = $(TOOLPREFIX)objdump
+<<<<<<< HEAD
 CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer
+CFLAGS += -Wno-error=infinite-recursion -Wno-infinite-recursion
+CFLAGS += -Wno-error=array-bounds -Wno-array-bounds
+=======
+CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -fno-omit-frame-pointer
+>>>>>>> abb385f (Assignment 5: User-level threads + mutex (working producer/consumer))
 CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
 ASFLAGS = -m32 -gdwarf-2 -Wa,-divide
 # FreeBSD ld wants ``elf_i386_fbsd''
@@ -145,6 +151,11 @@ vectors.S: vectors.pl
 
 ULIB = ulib.o usys.o printf.o umalloc.o
 
+_test_pc: test_pc.o uthread.o thread_switch.o $(ULIB)
+	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o _test_pc test_pc.o uthread.o thread_switch.o $(ULIB)
+	$(OBJDUMP) -S _test_pc > test_pc.asm
+	$(OBJDUMP) -t _test_pc | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > test_pc.sym
+
 _%: %.o $(ULIB)
 	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
 	$(OBJDUMP) -S $@ > $*.asm
@@ -165,6 +176,15 @@ mkfs: mkfs.c fs.h
 # http://www.gnu.org/software/make/manual/html_node/Chained-Rules.html
 .PRECIOUS: %.o
 
+uthread.o: uthread.c uthread.h
+	$(CC) $(CFLAGS) -c -o uthread.o uthread.c
+
+thread_switch.o: thread_switch.S
+	$(CC) $(CFLAGS) -c -o thread_switch.o thread_switch.S
+
+test_pc.o: test_pc.c uthread.h
+	$(CC) $(CFLAGS) -c -o test_pc.o test_pc.c
+
 UPROGS=\
 	_cat\
 	_echo\
@@ -181,6 +201,7 @@ UPROGS=\
 	_usertests\
 	_wc\
 	_zombie\
+	_test_pc\
 
 fs.img: mkfs README $(UPROGS)
 	./mkfs fs.img README $(UPROGS)
