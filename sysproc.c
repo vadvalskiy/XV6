@@ -89,3 +89,59 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+int
+sys_mprotect(void)
+{
+    char *addr;
+    int len;
+
+    if(argptr(0, &addr, sizeof(addr)) < 0)
+        return -1;
+    if(argint(1, &len) < 0)
+        return -1;
+
+    if((uint)addr % PGSIZE != 0 || len <= 0)
+        return -1;
+
+    struct proc *p = myproc();
+
+    for(int i = 0; i < len; i += PGSIZE) {
+        pte_t *pte = walkpgdir(p->pgdir, addr + i, 0);
+        if(!pte || !(*pte & PTE_P))
+            return -1;
+
+        *pte &= ~PTE_W;   // remove write
+    }
+
+    return 0;
+}
+
+int
+sys_munprotect(void)
+{
+    char *addr;
+    int len;
+
+    if(argptr(0, &addr, sizeof(addr)) < 0)
+        return -1;
+    if(argint(1, &len) < 0)
+        return -1;
+
+    if((uint)addr % PGSIZE != 0 || len <= 0)
+        return -1;
+
+    struct proc *p = myproc();
+
+    for(int i = 0; i < len; i += PGSIZE) {
+        pte_t *pte = walkpgdir(p->pgdir, addr + i, 0);
+        if(!pte || !(*pte & PTE_P))
+            return -1;
+
+        *pte |= PTE_W;   // restore write
+    }
+
+    lcr3(V2P(p->pgdir));   // flush TLB
+
+    return 0;
+}

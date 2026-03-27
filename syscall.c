@@ -14,7 +14,7 @@
 // to a saved program counter, and then the first argument.
 
 // Fetch the int at addr from the current process.
-int
+/*int
 fetchint(uint addr, int *ip)
 {
   struct proc *curproc = myproc();
@@ -23,12 +23,27 @@ fetchint(uint addr, int *ip)
     return -1;
   *ip = *(int*)(addr);
   return 0;
+}*/
+int
+fetchint(uint addr, int *ip)
+{
+  struct proc *curproc = myproc();
+
+  if(addr >= curproc->sz)
+    return -1;
+  if(addr + 4 > curproc->sz)
+    return -1;
+  if(addr + 4 < addr)   // overflow check
+    return -1;
+
+  *ip = *(int*)(addr);
+  return 0;
 }
 
 // Fetch the nul-terminated string at addr from the current process.
 // Doesn't actually copy the string - just sets *pp to point at it.
 // Returns length of string, not including nul.
-int
+/*int
 fetchstr(uint addr, char **pp)
 {
   char *s, *ep;
@@ -38,6 +53,24 @@ fetchstr(uint addr, char **pp)
     return -1;
   *pp = (char*)addr;
   ep = (char*)curproc->sz;
+  for(s = *pp; s < ep; s++){
+    if(*s == 0)
+      return s - *pp;
+  }
+  return -1;
+}*/
+int
+fetchstr(uint addr, char **pp)
+{
+  char *s, *ep;
+  struct proc *curproc = myproc();
+
+  if(addr >= curproc->sz)
+    return -1;
+
+  *pp = (char*)addr;
+  ep = (char*)curproc->sz;
+
   for(s = *pp; s < ep; s++){
     if(*s == 0)
       return s - *pp;
@@ -55,7 +88,7 @@ argint(int n, int *ip)
 // Fetch the nth word-sized system call argument as a pointer
 // to a block of memory of size bytes.  Check that the pointer
 // lies within the process address space.
-int
+/*int
 argptr(int n, char **pp, int size)
 {
   int i;
@@ -65,6 +98,30 @@ argptr(int n, char **pp, int size)
     return -1;
   if(size < 0 || (uint)i >= curproc->sz || (uint)i+size > curproc->sz)
     return -1;
+  *pp = (char*)i;
+  return 0;
+}*/
+int
+argptr(int n, char **pp, int size)
+{
+  int i;
+  struct proc *curproc = myproc();
+ 
+  if(argint(n, &i) < 0)
+    return -1;
+
+  if(size < 0)
+    return -1;
+
+  if((uint)i >= curproc->sz)
+    return -1;
+
+  if((uint)i + size > curproc->sz)
+    return -1;
+
+  if((uint)i + size < (uint)i)   // overflow check
+    return -1;
+
   *pp = (char*)i;
   return 0;
 }
@@ -103,6 +160,8 @@ extern int sys_unlink(void);
 extern int sys_wait(void);
 extern int sys_write(void);
 extern int sys_uptime(void);
+extern int sys_mprotect(void);
+extern int sys_munprotect(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -126,6 +185,8 @@ static int (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_mprotect]    sys_mprotect,
+[SYS_munprotect]  sys_munprotect,
 };
 
 void
