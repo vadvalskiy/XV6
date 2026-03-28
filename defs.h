@@ -156,6 +156,10 @@ int             fetchint(uint, int*);
 int             fetchstr(uint, char**);
 void            syscall(void);
 
+// sysproc.c
+int             sys_mprotect(void);
+int             sys_munprotect(void);
+
 // timer.c
 void            timerinit(void);
 
@@ -186,6 +190,8 @@ void            switchuvm(struct proc*);
 void            switchkvm(void);
 int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
+int             mprotectpages(void*, int);
+int             munprotectpages(void*, int);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

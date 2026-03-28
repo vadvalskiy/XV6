@@ -111,7 +111,7 @@ sys_mprotect(void)
         if(!pte || !(*pte & PTE_P))
             return -1;
 
-        *pte &= ~PTE_W;   // remove write
+        *pte &= ~PTE_W;
     }
 
     return 0;
@@ -138,10 +138,10 @@ sys_munprotect(void)
         if(!pte || !(*pte & PTE_P))
             return -1;
 
-        *pte |= PTE_W;   // restore write
+        *pte |= PTE_W;
     }
 
-    lcr3(V2P(p->pgdir));   // flush TLB
+    lcr3(V2P(p->pgdir));
 
     return 0;
 }
