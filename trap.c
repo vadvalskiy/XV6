@@ -79,7 +79,7 @@ trap(struct trapframe *tf)
     break;
 
   //PAGEBREAK: 13
-  default:
+  /*default:
     if(myproc() == 0 || (tf->cs&3) == 0){
       // In kernel, it must be our mistake.
       cprintf("unexpected trap %d from cpu %d eip %x (cr2=0x%x)\n",
@@ -92,6 +92,29 @@ trap(struct trapframe *tf)
             myproc()->pid, myproc()->name, tf->trapno,
             tf->err, cpuid(), tf->eip, rcr2());
     myproc()->killed = 1;
+  }*/
+
+  default:
+  if(myproc() == 0 || (tf->cs&3) == 0){
+    // Kernel mode → panic
+    cprintf("unexpected trap %d from cpu %d eip %x (cr2=0x%x)\n",
+            tf->trapno, cpuid(), tf->eip, rcr2());
+    panic("trap");
+  }
+
+  // Special handling for page fault
+  if(tf->trapno == T_PGFLT){
+    cprintf("pid %d %s: page fault at addr 0x%x, eip 0x%x\n",
+            myproc()->pid, myproc()->name, rcr2(), tf->eip);
+  } else {
+    cprintf("pid %d %s: trap %d err %d on cpu %d "
+            "eip 0x%x addr 0x%x--kill proc\n",
+            myproc()->pid, myproc()->name, tf->trapno,
+            tf->err, cpuid(), tf->eip, rcr2());
+  }
+
+  myproc()->killed = 1;
+  break;
   }
 
   // Force process exit if it has been killed and is in user space.
