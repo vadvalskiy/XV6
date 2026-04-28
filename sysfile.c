@@ -321,6 +321,11 @@ sys_open(void)
     end_op();
     return -1;
   }
+  //fixed, now the code can run without giving "log_write outside of transaction" error, old solution written below
+  if((omode & O_TRUNC) && ip->type == T_FILE){ // i added an addition ip->type == T_FILE so we dont accidnetaly do > . 
+    itrunc(ip);//delete the file contents
+  }
+
   iunlock(ip);
   end_op();
 
@@ -329,6 +334,22 @@ sys_open(void)
   f->off = 0;
   f->readable = !(omode & O_WRONLY);
   f->writable = (omode & O_WRONLY) || (omode & O_RDWR);
+
+
+  /* bug, this caused "log_write outside of transaction" i shoud add this code logic beofre iunlock(ip) and end_op() 
+
+
+  //handling behavior for > and >> work properly now
+  if(omode & O_TRUNC ){
+    ilock(ip);//lock it so no other process can write to it so no corruption or race condition occurs
+    itrunc(ip);//delete the file contents
+    iunlock(ip);//unlock the file so other processes can write to it such as echo in echo "new content" > file
+  }*/
+ 
+  if(omode & O_APPEND){
+    f->off = ip->size; //prepare the offset to the end of the file so that new content appends and not rewrite the file
+  }
+
   return fd;
 }
 

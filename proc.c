@@ -86,8 +86,10 @@ allocproc(void)
   return 0;
 
 found:
+  p->uid = 0; // default = normal user
   p->state = EMBRYO;
   p->pid = nextpid++;
+  p->priority = 10;
 
   release(&ptable.lock);
 
@@ -111,6 +113,11 @@ found:
   p->context = (struct context*)sp;
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
+
+  //safe defaults, not a real process yet, just initialization
+  p->is_thread = 0;
+  p->ustack = 0;
+  p->tgid = 0;
 
   return p;
 }
@@ -141,6 +148,12 @@ userinit(void)
 
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
+
+  //default thread group ownership so when cloned
+  //they can point back to this owwner
+  p->is_thread = 0;
+  p->ustack = 0;
+  p->tgid = p;
 
   // this assignment to p->state lets other cores
   // run this process. the acquire forces the above
@@ -210,6 +223,11 @@ fork(void)
 
   safestrcpy(np->name, curproc->name, sizeof(curproc->name));
 
+  //process
+  np->is_thread = 0;
+  np->ustack = 0;
+  np->tgid = np;
+
   pid = np->pid;
 
   acquire(&ptable.lock);
@@ -250,12 +268,17 @@ exit(void)
   acquire(&ptable.lock);
 
   // Parent might be sleeping in wait().
+  // or join()
   wakeup1(curproc->parent);
 
   // Pass abandoned children to init.
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     if(p->parent == curproc){
       p->parent = initproc;
+
+      if(p->is_thread == 1)
+        p->tgid = initproc->tgid;
+
       if(p->state == ZOMBIE)
         wakeup1(initproc);
     }
@@ -283,6 +306,14 @@ wait(void)
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->parent != curproc)
         continue;
+
+      //we studied wait() is for child processes only
+      //hence we must enforce that threads wont activate it
+      //if we dont do this, it will cause bug with shared address
+      if(p->is_thread) continue;
+      //I had it return -1 but that cuased issues, until i realized for(;;) is loopign thru the page table
+      //so i need to have it continue
+
       havekids = 1;
       if(p->state == ZOMBIE){
         // Found one.
@@ -294,6 +325,12 @@ wait(void)
         p->parent = 0;
         p->name[0] = 0;
         p->killed = 0;
+        //updated the extra properties
+        p->chan = 0;
+        p->is_thread = 0;
+        p->ustack = 0;
+        p->tgid = 0;
+
         p->state = UNUSED;
         release(&ptable.lock);
         return pid;
@@ -310,6 +347,137 @@ wait(void)
     sleep(curproc, &ptable.lock);  //DOC: wait-sleep
   }
 }
+//phase2
+int
+clone(void (*fcn)(void*), void *arg, void *stack)
+{
+  int i, pid;
+  uint sp;
+  struct proc *np;
+  struct proc *curproc = myproc();
+  if(fcn == 0 || stack == 0)
+    return -1;
+
+  //stack should be page aligned
+  if((uint)stack % PGSIZE != 0)
+    return -1;
+  //check if inside same address space <= not needed but for consistency, future proof
+  if((uint)stack >= curproc->sz)
+  return -1;
+
+  if((np = allocproc()) == 0)
+    return -1;
+
+  //share address space
+  np->pgdir = curproc->pgdir;
+  np->sz = curproc->sz;
+  np->parent = curproc;
+
+  // copy trapframe
+  *np->tf = *curproc->tf;
+
+  // child returns 0 from clone
+  np->tf->eax = 0;
+
+  //set up user stack:
+  //high address at top of one page
+  // note, xv6  stack grows downward
+  sp = (uint)stack + PGSIZE;
+
+  //push the thread function argument onto the user stack
+  //if i understood correctly, we dont have a caller hence
+  //we must do this push manually to prepare the stack 
+  sp -= 4;
+  *(uint*)sp = (uint)arg;
+
+
+  // since we building preparation manually,
+  // we need to also prepare a fake address so when it returns due to failure, crash intentionally
+  //if thats not done then it woould jump to random memory and cause weird undefined behvaior
+  sp -= 4; 
+  *(uint*)sp = 0xffffffff;
+
+  np->tf->esp = sp;
+  np->tf->ebp = sp;
+  np->tf->eip = (uint)fcn;
+
+  //copy open files so the thread clones can share access to open the same files
+  for(i = 0; i < NOFILE; i++)
+    if(curproc->ofile[i])
+      np->ofile[i] = filedup(curproc->ofile[i]);
+  np->cwd = idup(curproc->cwd); //copy current working directory
+  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
+
+  //thread metadata
+  np->is_thread = 1;
+  np->ustack = stack;
+  np->tgid = curproc->tgid;
+
+  pid = np->pid;
+
+  acquire(&ptable.lock);
+  np->state = RUNNABLE;
+  release(&ptable.lock);
+
+  return pid;
+}
+
+int
+join(void **stack) //join is similar to wait but for threads
+{
+  struct proc *p;
+  int havethreads, pid;
+  struct proc *curproc = myproc();
+
+  acquire(&ptable.lock);
+  for(;;){
+    havethreads = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->parent != curproc)
+        continue;
+
+      //join() handles only child threads in same thread group
+      if(!p->is_thread)
+        continue;
+      if(p->tgid != curproc->tgid)
+        continue;
+
+      havethreads = 1;
+      if(p->state == ZOMBIE){
+        pid = p->pid;
+      
+        if(stack) {
+          *stack = p->ustack;
+        }
+
+        kfree(p->kstack);
+        p->kstack = 0;
+
+        //we do not use freevm(p->pgdir) since same address space
+        p->pid = 0;
+        p->parent = 0;
+        p->name[0] = 0;
+        p->killed = 0;
+        p->chan = 0;
+        p->is_thread = 0;
+        p->ustack = 0;
+        p->tgid = 0;
+        p->state = UNUSED;
+
+        release(&ptable.lock);
+        return pid;
+      }
+    }
+
+    if(!havethreads || curproc->killed){
+      release(&ptable.lock);
+      return -1;
+    }
+
+    sleep(curproc, &ptable.lock);
+  }
+}
+
 
 //PAGEBREAK: 42
 // Per-CPU process scheduler.
@@ -323,35 +491,39 @@ void
 scheduler(void)
 {
   struct proc *p;
+  struct proc *best;
   struct cpu *c = mycpu();
   c->proc = 0;
-  
+
   for(;;){
-    // Enable interrupts on this processor.
     sti();
 
-    // Loop over process table looking for process to run.
     acquire(&ptable.lock);
+
+    best = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
         continue;
 
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
-      c->proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
+      if(best == 0 || p->priority < best->priority){
+        best = p;
+      } else if(p->priority == best->priority){
+        if(p->pid > best->pid)
+          best = p;
+      }
+    }
 
-      swtch(&(c->scheduler), p->context);
+    if(best != 0){
+      c->proc = best;
+      switchuvm(best);
+      best->state = RUNNING;
+
+      swtch(&c->scheduler, best->context);
       switchkvm();
 
-      // Process is done running for now.
-      // It should have changed its p->state before coming back.
       c->proc = 0;
     }
     release(&ptable.lock);
-
   }
 }
 
@@ -531,4 +703,28 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+// Set the priority of a process with the given pid.
+// Returns 0 on success, -1 if no such process exists.
+// This was added as part of the assignment to implement a simple priority scheduler.
+int
+setpriority(int pid, int priority)
+{
+  struct proc *p;
+  int found = 0;
+
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->pid == pid){
+      p->priority = priority;
+      found = 1;
+      break;
+    }
+  }
+  release(&ptable.lock);
+
+  if(!found)
+    return -1;
+  return 0;
 }

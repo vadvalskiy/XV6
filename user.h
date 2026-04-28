@@ -23,6 +23,14 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+int clear(void);
+int setuid(int);
+int getuid(void);
+//for kernel thread
+int clone(void (*fcn)(void*), void *arg, void *stack);
+int join(void **stack);
+int setpriority(int pid, int priority);
+int yield(void);
 
 // ulib.c
 int stat(const char*, struct stat*);
@@ -37,3 +45,15 @@ void* memset(void*, int, uint);
 void* malloc(uint);
 void free(void*);
 int atoi(const char*);
+
+//threadlib.c
+int thread_create(void (*fcn)(void*), void *arg);
+int thread_join(void);
+typedef struct {
+  uint locked;
+} lock_t;
+
+void lock_init(lock_t *lk);
+void lock_acquire(lock_t *lk);
+void lock_release(lock_t *lk);
+

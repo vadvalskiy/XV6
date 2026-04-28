@@ -22,6 +22,20 @@ fmtname(char *path)
   return buf;
 }
 
+int match(char *pattern, char *name){
+  if(*pattern == 0 && *name == 0)
+    return 1;
+
+  if(*pattern == '*'){
+    return match(pattern+1, name) || (*name && match(pattern, name+1));
+  }
+
+  if(*pattern == *name)
+    return match(pattern+1, name+1);
+
+  return 0;
+}
+
 void
 ls(char *path)
 {
@@ -70,6 +84,43 @@ ls(char *path)
   close(fd);
 }
 
+// This implementation of ls with wildcard support was added and was not in the original xv6 codebase.
+// this implementation only supports files in current directory.
+void ls_wildcard(char *pattern) {
+  int fd;
+  struct dirent de;
+  struct stat st;
+  char buf[512], *p;
+
+  if((fd = open(".", 0)) < 0){
+    printf(2, "ls: cannot open .\n");
+    return;
+  }
+
+  while(read(fd, &de, sizeof(de)) == sizeof(de)){
+    if(de.inum == 0)
+      continue;
+
+    if(match(pattern, de.name)){
+      strcpy(buf, ".");
+      p = buf + strlen(buf);
+      *p++ = '/';
+      memmove(p, de.name, DIRSIZ);
+      p[DIRSIZ] = 0;
+
+      if(stat(buf, &st) < 0){
+        printf(1, "ls: cannot stat %s\n", buf);
+        continue;
+      }
+
+      printf(1, "%s %d %d %d\n",
+        fmtname(buf), st.type, st.ino, st.size);
+    }
+  }
+
+  close(fd);
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -79,7 +130,15 @@ main(int argc, char *argv[])
     ls(".");
     exit();
   }
-  for(i=1; i<argc; i++)
-    ls(argv[i]);
+  for(i=1; i<argc; i++){
+    // Check if the argument contains a wildcard character
+    // this implementation was added and was not in the original xv6 codebase.
+    // Debug: printf(1, "arg = %s\n", argv[i]);
+    if(strchr(argv[i], '*')){
+      ls_wildcard(argv[i]);
+    } else {
+      ls(argv[i]);
+    }
+  }
   exit();
 }

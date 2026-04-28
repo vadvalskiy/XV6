@@ -1,0 +1,7 @@
+Priority Scheduler Documentation
+
+proc.h
+Added a priority field to the process structure to store each process's scheduling priority level. This field enables the scheduler to differentiate between processes based on their assigned priority values.
+
+proc.c
+Implemented priority-based scheduling logic in the scheduler function to select the next runnable process based on priority rather than simple round-robin. The scheduler now iterates through all processes, identifies runnable ones, and selects the process with the highest priority. Additionally, modified process initialization to assign default priority values to new processes, ensuring all processes have a defined priority level upon creation.

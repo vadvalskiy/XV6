@@ -297,3 +297,21 @@ consoleinit(void)
   ioapicenable(IRQ_KBD, 0);
 }
 
+void 
+clearscreen(void)
+{
+  acquire(&cons.lock);
+
+  int i;
+  for(i = 0; i < 80 * 25; i++){
+    crt[i] = (0x07 << 8) | ' ';
+  }
+
+  // reset cursor position
+  outb(CRTPORT, 14);
+  outb(CRTPORT+1, 0);
+  outb(CRTPORT, 15);
+  outb(CRTPORT+1, 0);
+
+  release(&cons.lock);
+}

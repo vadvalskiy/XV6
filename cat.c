@@ -31,6 +31,12 @@ main(int argc, char *argv[])
     exit();
   }
 
+  // for security reasons, prevent cat from reading the users file
+  if(strcmp(argv[1], "users") == 0){
+    printf(1, "Error: cannot read users file\n");
+    exit();
+  }
+
   for(i = 1; i < argc; i++){
     if((fd = open(argv[i], 0)) < 0){
       printf(1, "cat: cannot open %s\n", argv[i]);

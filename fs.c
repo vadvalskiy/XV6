@@ -22,7 +22,7 @@
 #include "file.h"
 
 #define min(a, b) ((a) < (b) ? (a) : (b))
-static void itrunc(struct inode*);
+void itrunc(struct inode*);
 // there should be one superblock per disk device, but we run with
 // only one device
 struct superblock sb; 
@@ -404,7 +404,7 @@ bmap(struct inode *ip, uint bn)
 // to it (no directory entries referring to it)
 // and has no in-memory reference to it (is
 // not an open file or current directory).
-static void
+void
 itrunc(struct inode *ip)
 {
   int i, j;

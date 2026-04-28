@@ -89,3 +89,75 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+extern void clearscreen(void);
+
+int sys_clear(void)
+{
+  clearscreen();
+  return 0;
+}
+
+int sys_setuid(void)
+{
+  int uid;
+  if(argint(0, &uid) < 0)
+    return -1;
+
+  myproc()->uid = uid;
+  return 0;
+}
+
+int sys_getuid(void)
+{
+  return myproc()->uid;
+}
+
+//for kernel threads
+int
+sys_clone(void)
+{
+  char *fcn;
+  char *arg;
+  char *stack;
+
+  if(argptr(0, &fcn, sizeof(void*)) < 0)
+    return -1;
+  if(argptr(1, &arg, sizeof(void*)) < 0)
+    return -1;
+  if(argptr(2, &stack, sizeof(void*)) < 0)
+    return -1;
+
+  return clone((void(*)(void*))fcn, arg, stack);
+}
+
+int
+sys_join(void)
+{
+  char **stack;
+
+  if(argptr(0, (char**)&stack, sizeof(void*)) < 0)
+    return -1;
+
+  return join((void**)stack);
+}
+
+int
+sys_setpriority(void)
+{
+  int pid, priority;
+
+  if(argint(0, &pid) < 0)
+    return -1;
+  if(argint(1, &priority) < 0)
+    return -1;
+
+  return setpriority(pid, priority);
+}
+
+int
+sys_yield(void)
+{
+  yield();
+  return 0;
+}
