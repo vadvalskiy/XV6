@@ -88,4 +88,12 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+
+}
+
+
+int sys_hello(void)
+{
+  cprintf("hello from kernel! \n");
+  return 123;
 }

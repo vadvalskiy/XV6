@@ -1,51 +1,48 @@
-NOTE: we have stopped maintaining the x86 version of xv6, and switched
-our efforts to the RISC-V version
-(https://github.com/mit-pdos/xv6-riscv.git)
+xv6 系统调用扩展实验报告
+一、实验内容说明
+本实验为操作系统课程 xv6 内核扩展实验，完成的任务如下：
+第一层：机制观察
+1：系统调用路径跟踪
+2：调度过程观察
+3：内存分配观察
+第二层：机制理解
+任务：新增并实现一个简单系统调用 `hello()`
+完成情况：已完整实现并通过验证
+ 二、hello() 系统调用实现过程
+ 1. 实现步骤
+1.  定义系统调用号
+    修改 kernel/syscall.h，添加新调用编号： c
+    #define SYS_hello 22
+2.  用户层接口声明
+    修改 user/user.h`，添加用户态函数声明：     
+3.  内核注册系统调用
+    修改 kernel/syscall.c：
+     声明内核处理函数：
+      extern uint64 sys_hello(void);
+    在系统调用表中添加映射：
 
-xv6 is a re-implementation of Dennis Ritchie's and Ken Thompson's Unix
-Version 6 (v6).  xv6 loosely follows the structure and style of v6,
-but is implemented for a modern x86-based multiprocessor using ANSI C.
+4.  内核态实现 sys_hello
+    修改 kernel/sysproc.c，实现内核逻辑
+5.  添加用户态调用入口
+    修改 usys.S，添加汇编入口：
+6.  用户程序验证
+    新建 user/testhello.c 测试文件
+    修改 Makefile 的 UPROGS 变量，添加 $U/_testhello，执行 make clean && make 重新编译，运行 make qemu 启动 xv6，在终端输入 testhello 验证。
 
-ACKNOWLEDGMENTS
-
-xv6 is inspired by John Lions's Commentary on UNIX 6th Edition (Peer
-to Peer Communications; ISBN: 1-57398-013-7; 1st edition (June 14,
-2000)). See also https://pdos.csail.mit.edu/6.828/, which
-provides pointers to on-line resources for v6.
-
-xv6 borrows code from the following sources:
-    JOS (asm.h, elf.h, mmu.h, bootasm.S, ide.c, console.c, and others)
-    Plan 9 (entryother.S, mp.h, mp.c, lapic.c)
-    FreeBSD (ioapic.c)
-    NetBSD (console.c)
-
-The following people have made contributions: Russ Cox (context switching,
-locking), Cliff Frey (MP), Xiao Yu (MP), Nickolai Zeldovich, and Austin
-Clements.
-
-We are also grateful for the bug reports and patches contributed by Silas
-Boyd-Wickizer, Anton Burtsev, Cody Cutler, Mike CAT, Tej Chajed, eyalz800,
-Nelson Elhage, Saar Ettinger, Alice Ferrazzi, Nathaniel Filardo, Peter
-Froehlich, Yakir Goaron,Shivam Handa, Bryan Henry, Jim Huang, Alexander
-Kapshuk, Anders Kaseorg, kehao95, Wolfgang Keller, Eddie Kohler, Austin
-Liew, Imbar Marinescu, Yandong Mao, Matan Shabtay, Hitoshi Mitake, Carmi
-Merimovich, Mark Morrissey, mtasm, Joel Nider, Greg Price, Ayan Shafqat,
-Eldar Sehayek, Yongming Shen, Cam Tenny, tyfkda, Rafael Ubal, Warren
-Toomey, Stephen Tu, Pablo Ventura, Xi Wang, Keiichi Watanabe, Nicolas
-Wolovick, wxdao, Grant Wu, Jindong Zhang, Icenowy Zheng, and Zou Chang Wei.
-
-The code in the files that constitute xv6 is
-Copyright 2006-2018 Frans Kaashoek, Robert Morris, and Russ Cox.
-
-ERROR REPORTS
-
-We don't process error reports (see note on top of this file).
-
-BUILDING AND RUNNING XV6
-
-To build xv6 on an x86 ELF machine (like Linux or FreeBSD), run
-"make". On non-x86 or non-ELF machines (like OS X, even on x86), you
-will need to install a cross-compiler gcc suite capable of producing
-x86 ELF binaries (see https://pdos.csail.mit.edu/6.828/).
-Then run "make TOOLPREFIX=i386-jos-elf-". Now install the QEMU PC
-simulator and run "make qemu".
+2. 运行结果
+在 xv6 终端中运行 testhello
+程序正常打印用户态提示信息，内核成功执行 sys_hello 并输出当前进程 PID，返回值为 0，验证了系统调用的正确性。
+三、遇到的问题及解决方法
+1.  编译错误：undefined reference to hello
+    问题原因：未在 usys.S 中添加 SYSCALL(hello) 声明，导致链接阶段找不到用户态调用的汇编实现。
+    解决方法：在 usys.S 末尾添加 SYSCALL(hello)，重新编译后错误消失。
+2.  内核运行时崩溃
+    问题原因：sys_hello 函数中调用 myproc() 时未包含 proc.h 头文件，导致函数未定义。
+    解决方法：在 sysproc.c中引入 #include "proc.h"，确保内核能正确获取当前进程信息。
+3.  xv6 中找不到 testhello 命令
+    问题原因：未将 testhello 添加到 Makefile 的 UPROGS 列表中，程序未被编译进 xv6 的文件系统。
+    解决方法：在 UPROGS 中添加 $U/_testhello，执行 make clean && make 重新构建文件系统，问题解决。
+四、实践心得
+本次 xv6 系统调用扩展实验，让我对操作系统用户态与内核态的交互机制有了从理论到实践的完整理解。之前在课堂上学习的系统调用原理，只是停留在“用户程序通过中断陷入内核，内核分发调用并返回结果”的抽象概念，而通过亲手实现 `hello()` 系统调用，我真正走完了从用户接口声明、系统调用号分配，到内核注册、内核逻辑实现，再到用户程序验证的完整流程。
+实验过程中遇到的编译错误、内核崩溃、命令找不到等问题，也让我意识到操作系统开发中细节的重要性。每一处头文件引用、每一行汇编代码、每一次 `Makefile` 的修改，都会直接影响系统的运行结果。解决这些问题的过程，不仅锻炼了我的调试能力，也让我更深刻地理解了 xv6 内核的代码结构与构建流程。
+通过本次实验，我不仅掌握了 xv6 中新增系统调用的方法，更对操作系统的底层工作机制有了更清晰的认识，为后续深入学习进程管理、内存管理等内容打下了坚实的基础。同时，也让我体会到了开源操作系统 xv6 简洁而精巧的设计思想，激发了我对操作系统底层开发的兴趣。

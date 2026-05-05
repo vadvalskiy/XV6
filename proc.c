@@ -322,6 +322,7 @@ wait(void)
 void
 scheduler(void)
 {
+  cprintf("[SCHED] switch to pid");
   struct proc *p;
   struct cpu *c = mycpu();
   c->proc = 0;

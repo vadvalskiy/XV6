@@ -82,6 +82,7 @@ kfree(char *v)
 char*
 kalloc(void)
 {
+  cprintf("[MEM] allow pages at 0x");
   struct run *r;
 
   if(kmem.use_lock)

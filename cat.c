@@ -10,6 +10,7 @@ cat(int fd)
   int n;
 
   while((n = read(fd, buf, sizeof(buf))) > 0) {
+	  printf(1,"[USER] calling write");
     if (write(1, buf, n) != n) {
       printf(1, "cat: write error\n");
       exit();
