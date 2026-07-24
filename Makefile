@@ -181,6 +181,8 @@ UPROGS=\
 	_mkdir\
 	_pinfo_test\
 	_rm\
+	_sort_kernel\
+	_sort_user\
 	_sh\
 	_stressfs\
 	_usertests\
