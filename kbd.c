@@ -13,6 +13,7 @@ kbdgetc(void)
   uint st, data, c;
 
   st = inb(KBSTATP);
+
   if((st & KBS_DIB) == 0)
     return -1;
   data = inb(KBDATAP);
@@ -34,6 +35,11 @@ kbdgetc(void)
   shift |= shiftcode[data];
   shift ^= togglecode[data];
   c = charcode[shift & (CTL | SHIFT)][data];
+  if(c == KEY_LF)
+    return LEFT_ARROW;
+  if(c == KEY_RT)
+    return RIGHT_ARROW;
+
   if(shift & CAPSLOCK){
     if('a' <= c && c <= 'z')
       c += 'A' - 'a';

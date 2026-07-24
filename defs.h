@@ -21,6 +21,8 @@ void            consoleinit(void);
 void            cprintf(char*, ...);
 void            consoleintr(int(*)(void));
 void            panic(char*) __attribute__((noreturn));
+#define RIGHT_ARROW 0x101
+#define LEFT_ARROW 0x102
 
 // exec.c
 int             exec(char*, char**);
@@ -144,6 +146,8 @@ int             memcmp(const void*, const void*, uint);
 void*           memmove(void*, const void*, uint);
 void*           memset(void*, int, uint);
 char*           safestrcpy(char*, const char*, int);
+char*           strcpy(char*, const char*);
+int             strcmp(const char*, const char*);
 int             strlen(const char*);
 int             strncmp(const char*, const char*, uint);
 char*           strncpy(char*, const char*, int);
