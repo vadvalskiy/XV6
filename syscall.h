@@ -24,3 +24,7 @@
 #define SYS_getRandomNumber 23
 #define SYS_process_information 24
 #define SYS_sort_numbers 25
+
+#define SYS_set_scheduling_info 26
+#define SYS_change_queue 27
+#define SYS_print_scheduling_info 28

@@ -119,6 +119,9 @@ extern int sys_setSeed(void);
 extern int sys_getRandomNumber(void);
 extern int sys_process_information(void);
 extern int sys_sort_numbers(void);
+extern int sys_set_scheduling_info(void);
+extern int sys_change_queue(void);
+extern int sys_print_scheduling_info(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -146,6 +149,9 @@ static int (*syscalls[])(void) = {
 [SYS_getRandomNumber] sys_getRandomNumber,
 [SYS_process_information] sys_process_information,
 [SYS_sort_numbers] sys_sort_numbers,
+[SYS_set_scheduling_info] sys_set_scheduling_info,
+[SYS_change_queue] sys_change_queue,
+[SYS_print_scheduling_info] sys_print_scheduling_info,
 };
 
 void

@@ -184,6 +184,11 @@ UPROGS=\
 	_rm\
 	_sort_kernel\
 	_sort_user\
+	_workload_mixed\
+	_workload_long\
+	_workload_short\
+	_workload_aging\
+	_schedtest\
 	_sh\
 	_stressfs\
 	_usertests\

@@ -27,6 +27,9 @@ int setSeed(void);
 int getRandomNumber(int, int*);
 int process_information(int);
 int sort_numbers(const char*);
+int set_scheduling_info(int, int, int);
+int change_queue(int, int);
+int print_scheduling_info(void);
 
 // ulib.c
 int stat(const char*, struct stat*);

@@ -33,3 +33,7 @@ SYSCALL(setSeed)
 SYSCALL(getRandomNumber)
 SYSCALL(process_information)
 SYSCALL(sort_numbers)
+
+SYSCALL(set_scheduling_info)
+SYSCALL(change_queue)
+SYSCALL(print_scheduling_info)

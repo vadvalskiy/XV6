@@ -144,7 +144,7 @@ sys_getRandomNumber(void)
   int n;
   int *ubuf;
   int i;
-  uint values[14];
+  uint value;
 
   randominit_once();
 
@@ -155,17 +155,17 @@ sys_getRandomNumber(void)
   if(argptr(1, (char**)&ubuf, n * sizeof(int)) < 0)
     return -1;
 
-  // Keep the PRNG state critical section short. User-memory access may fault,
-  // so copy only after releasing the spinlock.
   acquire(&randlock);
   for(i = 0; i < n; i++){
     random_state = (1103515245U * random_state + 12345U) & 0x7fffffffU;
-    values[i] = random_state;
+    value = random_state;
+    if(copyout(myproc()->pgdir, (uint)&ubuf[i], &value, sizeof(value)) < 0){
+      release(&randlock);
+      return -1;
+    }
   }
   release(&randlock);
 
-  if(copyout(myproc()->pgdir, (uint)ubuf, values, n * sizeof(values[0])) < 0)
-    return -1;
   return 0;
 }
 
@@ -180,3 +180,36 @@ sys_process_information(void)
 }
 
 
+
+
+int
+sys_set_scheduling_info(void)
+{
+  int pid, burst, confidence;
+
+  if(argint(0, &pid) < 0)
+    return -1;
+  if(argint(1, &burst) < 0)
+    return -1;
+  if(argint(2, &confidence) < 0)
+    return -1;
+  return scheduler_set_params(pid, burst, confidence);
+}
+
+int
+sys_change_queue(void)
+{
+  int pid, q;
+
+  if(argint(0, &pid) < 0)
+    return -1;
+  if(argint(1, &q) < 0)
+    return -1;
+  return scheduler_change_queue(pid, q);
+}
+
+int
+sys_print_scheduling_info(void)
+{
+  return scheduler_print_info();
+}
