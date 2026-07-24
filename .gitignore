@@ -14,3 +14,13 @@ kernel
 kernelmemfs
 mkfs
 .gdbinit
+
+dist/
+dist-test/
+__pycache__/
+*.py[cod]
+artifacts/
+*.log
+.DS_Store
+.vscode/
+.idea/
