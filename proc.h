@@ -8,10 +8,26 @@ struct cpu {
   int ncli;                    // Depth of pushcli nesting.
   int intena;                  // Were interrupts enabled before pushcli?
   struct proc *proc;           // The process running on this cpu or null
+
+  // Lab 3: state of this CPU's weighted round-robin scheduler.
+  int sched_queue;             // queue currently receiving this CPU's slice
+  int sched_queue_ticks;       // ticks spent in the current queue slice
+  int sched_rr_next;           // next process-table index for queue-0 RR
 };
 
 extern struct cpu cpus[NCPU];
 extern int ncpu;
+
+// Lab 3 scheduler constants.  Queue 0 has the highest priority,
+// but queues are selected by per-CPU weighted round robin rather than
+// by fixed priority.
+#define SCHED_Q_RR     0
+#define SCHED_Q_SJF    1
+#define SCHED_Q_FCFS   2
+#define SCHED_NQUEUE   3
+#define SCHED_RR_QUANTUM_TICKS 5     // 50 ms when one tick is 10 ms
+#define SCHED_WRR_UNIT_TICKS   10    // 100 ms
+#define SCHED_AGING_TICKS      800
 
 //PAGEBREAK: 17
 // Saved registers for kernel context switches.
@@ -49,6 +65,15 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  // Lab 3 scheduling metadata.
+  int sched_queue;             // 0: RR, 1: approximate SJF, 2: FCFS
+  int sched_wait_ticks;        // RUNNABLE ticks since last dispatch/promotion
+  int sched_burst_time;        // estimated burst for SJF; default 2
+  int sched_confidence;        // confidence in burst estimate; default 50
+  int sched_consecutive_ticks; // ticks in the current uninterrupted run
+  uint sched_arrival_tick;     // time of entering the current queue
+  int sched_shell_path;        // init/sh lineage flag used to keep shell live
 };
 
 // Process memory is laid out contiguously, low addresses first:

@@ -12,6 +12,21 @@ struct {
   struct proc proc[NPROC];
 } ptable;
 
+struct sched_proc_snapshot {
+  char name[16];
+  int pid;
+  char *state;
+  int queue;
+  int wait;
+  int confidence;
+  int burst;
+  int consecutive;
+  uint arrival;
+};
+
+static struct spinlock schedprintlock;
+static struct sched_proc_snapshot sched_snap[NPROC];
+
 static char *pstate_names[] = {
 [UNUSED]    "UNUSED",
 [EMBRYO]    "EMBRYO",
@@ -22,6 +37,7 @@ static char *pstate_names[] = {
 };
 
 static struct proc *initproc;
+extern uint ticks;
 
 int nextpid = 1;
 extern void forkret(void);
@@ -29,10 +45,196 @@ extern void trapret(void);
 
 static void wakeup1(void *chan);
 
+
+static uint sched_rand_state = 0x12345678;
+
+static int
+sched_queue_quota(int q)
+{
+  if(q == SCHED_Q_RR)
+    return 3 * SCHED_WRR_UNIT_TICKS;
+  if(q == SCHED_Q_SJF)
+    return 2 * SCHED_WRR_UNIT_TICKS;
+  return SCHED_WRR_UNIT_TICKS;
+}
+
+static int
+sched_valid_queue(int q)
+{
+  return q >= 0 && q < SCHED_NQUEUE;
+}
+
+static int
+sched_rand100(void)
+{
+  sched_rand_state = sched_rand_state * 1103515245U + 12345U + ticks;
+  return (sched_rand_state >> 16) % 100;
+}
+
+static void
+sched_init_proc_fields(struct proc *p)
+{
+  p->sched_queue = SCHED_Q_FCFS;
+  p->sched_wait_ticks = 0;
+  p->sched_burst_time = 2;
+  p->sched_confidence = 50;
+  p->sched_consecutive_ticks = 0;
+  p->sched_arrival_tick = ticks;
+  p->sched_shell_path = 0;
+}
+
+static void
+sched_mark_runnable_after_sleep(struct proc *p)
+{
+  p->state = RUNNABLE;
+  p->sched_wait_ticks = 0;
+  p->sched_consecutive_ticks = 0;
+  p->sched_arrival_tick = ticks;
+}
+
+static int
+sched_queue_has_runnable(int q)
+{
+  struct proc *p;
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    if(p->state == RUNNABLE && p->sched_queue == q)
+      return 1;
+  return 0;
+}
+
+static struct proc*
+sched_pick_rr(struct cpu *c)
+{
+  int i, idx;
+  struct proc *p;
+
+  for(i = 0; i < NPROC; i++){
+    idx = (c->sched_rr_next + i) % NPROC;
+    p = &ptable.proc[idx];
+    if(p->state == RUNNABLE && p->sched_queue == SCHED_Q_RR){
+      c->sched_rr_next = (idx + 1) % NPROC;
+      return p;
+    }
+  }
+  return 0;
+}
+
+static int
+sched_less_sjf(struct proc *a, struct proc *b)
+{
+  if(b == 0)
+    return 1;
+  if(a->sched_burst_time != b->sched_burst_time)
+    return a->sched_burst_time < b->sched_burst_time;
+  if(a->sched_arrival_tick != b->sched_arrival_tick)
+    return a->sched_arrival_tick < b->sched_arrival_tick;
+  return a->pid < b->pid;
+}
+
+static int
+sched_after_sjf_key(struct proc *p, int last_burst, uint last_arrival, int last_pid)
+{
+  if(last_pid < 0)
+    return 1;
+  if(p->sched_burst_time != last_burst)
+    return p->sched_burst_time > last_burst;
+  if(p->sched_arrival_tick != last_arrival)
+    return p->sched_arrival_tick > last_arrival;
+  return p->pid > last_pid;
+}
+
+static int
+sched_count_queue(int q)
+{
+  struct proc *p;
+  int n = 0;
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
+    if(p->state == RUNNABLE && p->sched_queue == q)
+      n++;
+  return n;
+}
+
+static struct proc*
+sched_pick_sjf(void)
+{
+  int total, step, last_burst, last_pid;
+  uint last_arrival;
+  struct proc *p, *best;
+
+  total = sched_count_queue(SCHED_Q_SJF);
+  if(total == 0)
+    return 0;
+
+  last_burst = 0;
+  last_arrival = 0;
+  last_pid = -1;
+  for(step = 0; step < total; step++){
+    best = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      if(p->state != RUNNABLE || p->sched_queue != SCHED_Q_SJF)
+        continue;
+      if(!sched_after_sjf_key(p, last_burst, last_arrival, last_pid))
+        continue;
+      if(sched_less_sjf(p, best))
+        best = p;
+    }
+    if(best == 0)
+      return 0;
+    if(step == total - 1 || sched_rand100() <= best->sched_confidence)
+      return best;
+    last_burst = best->sched_burst_time;
+    last_arrival = best->sched_arrival_tick;
+    last_pid = best->pid;
+  }
+  return 0;
+}
+
+static struct proc*
+sched_pick_fcfs(void)
+{
+  struct proc *p, *best = 0;
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state != RUNNABLE || p->sched_queue != SCHED_Q_FCFS)
+      continue;
+    if(best == 0 || p->sched_arrival_tick < best->sched_arrival_tick ||
+       (p->sched_arrival_tick == best->sched_arrival_tick && p->pid < best->pid))
+      best = p;
+  }
+  return best;
+}
+
+static struct proc*
+sched_pick_from_queue(struct cpu *c, int q)
+{
+  if(q == SCHED_Q_RR)
+    return sched_pick_rr(c);
+  if(q == SCHED_Q_SJF)
+    return sched_pick_sjf();
+  if(q == SCHED_Q_FCFS)
+    return sched_pick_fcfs();
+  return 0;
+}
+
+static void
+sched_advance_queue(struct cpu *c)
+{
+  c->sched_queue = (c->sched_queue + 1) % SCHED_NQUEUE;
+  c->sched_queue_ticks = 0;
+}
+
+static int
+sched_queue_of_new_child(struct proc *parent)
+{
+  if(parent == initproc || parent->sched_shell_path)
+    return SCHED_Q_RR;
+  return SCHED_Q_FCFS;
+}
+
 void
 pinit(void)
 {
   initlock(&ptable.lock, "ptable");
+  initlock(&schedprintlock, "schedprint");
 }
 
 // Must be called with interrupts disabled
@@ -97,6 +299,7 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
+  sched_init_proc_fields(p);
 
   release(&ptable.lock);
 
@@ -157,6 +360,9 @@ userinit(void)
   // because the assignment might not be atomic.
   acquire(&ptable.lock);
 
+  p->sched_queue = SCHED_Q_RR;
+  p->sched_shell_path = 1;
+  p->sched_arrival_tick = ticks;
   p->state = RUNNABLE;
 
   release(&ptable.lock);
@@ -223,6 +429,11 @@ fork(void)
 
   acquire(&ptable.lock);
 
+  np->sched_queue = sched_queue_of_new_child(curproc);
+  np->sched_shell_path = curproc->sched_shell_path;
+  np->sched_wait_ticks = 0;
+  np->sched_consecutive_ticks = 0;
+  np->sched_arrival_tick = ticks;
   np->state = RUNNABLE;
 
   release(&ptable.lock);
@@ -333,24 +544,42 @@ scheduler(void)
 {
   struct proc *p;
   struct cpu *c = mycpu();
+  int tried;
+
   c->proc = 0;
-  
+  if(!sched_valid_queue(c->sched_queue)){
+    c->sched_queue = SCHED_Q_RR;
+    c->sched_queue_ticks = 0;
+    c->sched_rr_next = 0;
+  }
+
   for(;;){
     // Enable interrupts on this processor.
     sti();
 
-    // Loop over process table looking for process to run.
     acquire(&ptable.lock);
-    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-      if(p->state != RUNNABLE)
-        continue;
 
-      // Switch to chosen process.  It is the process's job
-      // to release ptable.lock and then reacquire it
-      // before jumping back to us.
+    p = 0;
+    for(tried = 0; tried < SCHED_NQUEUE; tried++){
+      if(c->sched_queue_ticks >= sched_queue_quota(c->sched_queue) ||
+         !sched_queue_has_runnable(c->sched_queue)){
+        sched_advance_queue(c);
+        continue;
+      }
+
+      p = sched_pick_from_queue(c, c->sched_queue);
+      if(p != 0)
+        break;
+
+      sched_advance_queue(c);
+    }
+
+    if(p != 0){
       c->proc = p;
       switchuvm(p);
       p->state = RUNNING;
+      p->sched_wait_ticks = 0;
+      p->sched_consecutive_ticks = 0;
 
       swtch(&(c->scheduler), p->context);
       switchkvm();
@@ -359,8 +588,8 @@ scheduler(void)
       // It should have changed its p->state before coming back.
       c->proc = 0;
     }
-    release(&ptable.lock);
 
+    release(&ptable.lock);
   }
 }
 
@@ -470,7 +699,7 @@ wakeup1(void *chan)
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
     if(p->state == SLEEPING && p->chan == chan)
-      p->state = RUNNABLE;
+      sched_mark_runnable_after_sleep(p);
 }
 
 // Wake up all processes sleeping on chan.
@@ -496,7 +725,7 @@ kill(int pid)
       p->killed = 1;
       // Wake process from sleep if necessary.
       if(p->state == SLEEPING)
-        p->state = RUNNABLE;
+        sched_mark_runnable_after_sleep(p);
       release(&ptable.lock);
       return 0;
     }
@@ -589,6 +818,221 @@ procinfo(int pid)
   cprintf("State: %s\n", state);
 
   return 0;
+}
+
+
+int
+scheduler_tick(void)
+{
+  struct proc *p;
+  struct cpu *c;
+  int should_yield = 0;
+
+  p = myproc();
+  if(p == 0)
+    return 0;
+
+  c = mycpu();
+  acquire(&ptable.lock);
+  if(p->state == RUNNING){
+    if(c->sched_queue != p->sched_queue){
+      c->sched_queue = p->sched_queue;
+      c->sched_queue_ticks = 0;
+    }
+    p->sched_consecutive_ticks++;
+    c->sched_queue_ticks++;
+
+    if(p->sched_queue == SCHED_Q_RR &&
+       p->sched_consecutive_ticks >= SCHED_RR_QUANTUM_TICKS)
+      should_yield = 1;
+
+    if(c->sched_queue_ticks >= sched_queue_quota(c->sched_queue))
+      should_yield = 1;
+  }
+  release(&ptable.lock);
+  return should_yield;
+}
+
+void
+scheduler_waiting_tick(void)
+{
+  struct proc *p;
+  int npromote;
+  int pid[NPROC];
+  int from[NPROC];
+  int to[NPROC];
+  int oldq;
+  int newq;
+  int i;
+
+  npromote = 0;
+
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state != RUNNABLE)
+      continue;
+
+    p->sched_wait_ticks++;
+    newq = p->sched_queue;
+
+    if(p->sched_queue == SCHED_Q_FCFS && p->sched_wait_ticks >= SCHED_AGING_TICKS)
+      newq = SCHED_Q_SJF;
+    else if(p->sched_queue == SCHED_Q_SJF && p->sched_wait_ticks >= SCHED_AGING_TICKS)
+      newq = SCHED_Q_RR;
+
+    if(newq != p->sched_queue){
+      oldq = p->sched_queue;
+      p->sched_queue = newq;
+      p->sched_wait_ticks = 0;
+      p->sched_consecutive_ticks = 0;
+      p->sched_arrival_tick = ticks;
+
+      if(npromote < NPROC){
+        pid[npromote] = p->pid;
+        from[npromote] = oldq;
+        to[npromote] = newq;
+        npromote++;
+      }
+    }
+  }
+  release(&ptable.lock);
+
+  // The assignment requires visible aging events.  We deliberately print
+  // after releasing ptable.lock to avoid console/ptable lock-order problems.
+  for(i = 0; i < npromote; i++)
+    cprintf("aging: pid %d promoted from queue %d to queue %d\n",
+            pid[i], from[i], to[i]);
+}
+
+int
+scheduler_set_params(int pid, int burst, int confidence)
+{
+  struct proc *p;
+
+  if(burst <= 0 || confidence < 0 || confidence > 100)
+    return -1;
+
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state != UNUSED && p->pid == pid){
+      p->sched_burst_time = burst;
+      p->sched_confidence = confidence;
+      release(&ptable.lock);
+      return 0;
+    }
+  }
+  release(&ptable.lock);
+  return -1;
+}
+
+int
+scheduler_change_queue(int pid, int q)
+{
+  struct proc *p;
+  struct cpu *c;
+
+  if(!sched_valid_queue(q))
+    return -1;
+
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state != UNUSED && p->pid == pid){
+      // init and the interactive shell must stay in queue 0 so that the
+      // system remains responsive, as required by the lab statement.
+      if((p == initproc || p->sched_shell_path) && q != SCHED_Q_RR){
+        release(&ptable.lock);
+        return -1;
+      }
+
+      if(p->sched_queue == q){
+        release(&ptable.lock);
+        return 0;
+      }
+
+      p->sched_queue = q;
+      p->sched_wait_ticks = 0;
+      p->sched_arrival_tick = ticks;
+      p->sched_consecutive_ticks = 0;
+
+      if(p == myproc() && p->state == RUNNING){
+        c = mycpu();
+        c->sched_queue = q;
+        c->sched_queue_ticks = 0;
+      }
+      release(&ptable.lock);
+      return 0;
+    }
+  }
+  release(&ptable.lock);
+  return -1;
+}
+
+int
+scheduler_print_info(void)
+{
+  struct proc *p;
+  char *state;
+  int n;
+  int i;
+
+  acquire(&schedprintlock);
+
+  acquire(&ptable.lock);
+  n = 0;
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state == UNUSED)
+      continue;
+
+    if(p->state >= 0 && p->state < NELEM(pstate_names) && pstate_names[p->state])
+      state = pstate_names[p->state];
+    else
+      state = "???";
+
+    safestrcpy(sched_snap[n].name, p->name, sizeof(sched_snap[n].name));
+    sched_snap[n].pid = p->pid;
+    sched_snap[n].state = state;
+    sched_snap[n].queue = p->sched_queue;
+    sched_snap[n].wait = p->sched_wait_ticks;
+    sched_snap[n].confidence = p->sched_confidence;
+    sched_snap[n].burst = p->sched_burst_time;
+    sched_snap[n].consecutive = p->sched_consecutive_ticks;
+    sched_snap[n].arrival = p->sched_arrival_tick;
+    n++;
+  }
+  release(&ptable.lock);
+
+  cprintf("name            pid state     queue wait confidence burst consecutive arrival\n");
+  cprintf("--------------- --- --------- ----- ---- ---------- ----- ----------- -------\n");
+  for(i = 0; i < n; i++){
+    cprintf("%s", sched_snap[i].name);
+    // fixed-width strings are inconvenient in xv6 cprintf, so columns are space separated.
+    cprintf(" %d %s %d %d %d %d %d %d\n",
+            sched_snap[i].pid, sched_snap[i].state, sched_snap[i].queue,
+            sched_snap[i].wait, sched_snap[i].confidence, sched_snap[i].burst,
+            sched_snap[i].consecutive, sched_snap[i].arrival);
+  }
+
+  release(&schedprintlock);
+  return 0;
+}
+
+void
+scheduler_on_exec(char *name)
+{
+  struct proc *p = myproc();
+
+  acquire(&ptable.lock);
+  if(p == initproc || strncmp(name, "init", 5) == 0 || strncmp(name, "sh", 3) == 0){
+    p->sched_queue = SCHED_Q_RR;
+    p->sched_shell_path = 1;
+  } else {
+    p->sched_queue = SCHED_Q_FCFS;
+    p->sched_shell_path = 0;
+  }
+  p->sched_wait_ticks = 0;
+  p->sched_consecutive_ticks = 0;
+  p->sched_arrival_tick = ticks;
+  release(&ptable.lock);
 }
 
 //PAGEBREAK: 36

@@ -101,6 +101,7 @@ exec(char *path, char **argv)
   curproc->tf->esp = sp;
   switchuvm(curproc);
   freevm(oldpgdir);
+  scheduler_on_exec(curproc->name);
   return 0;
 
  bad:
