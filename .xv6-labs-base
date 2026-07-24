@@ -1,0 +1,4 @@
+upstream: mit-pdos/xv6-public
+architecture: x86
+source-root-commit: bb63e4a4d205d727ea4ace9643ef331fd0967aa5
+layout: repository root
