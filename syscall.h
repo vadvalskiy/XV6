@@ -28,5 +28,20 @@
 #define SYS_set_scheduling_info 26
 #define SYS_change_queue 27
 #define SYS_print_scheduling_info 28
+#define SYS_getcount 29
+#define SYS_getcpucount 30
+#define SYS_produce 31
+#define SYS_consume 32
+#define SYS_rw_acquire_read 33
+#define SYS_rw_release_read 34
+#define SYS_rw_acquire_write 35
+#define SYS_rw_release_write 36
+#define SYS_ticket_acquire 37
+#define SYS_ticket_release 38
+#define SYS_ticket_turn 39
 
-#define SYS_waitstats 29
+#define SYS_waitstats 40
+#define SYS_try_produce 41
+#define SYS_try_consume 42
+#define SYS_consume_value 43
+#define SYS_getcountmode 44

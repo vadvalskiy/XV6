@@ -81,6 +81,14 @@ struct proc {
   uint sched_runnable_ticks;   // timer ticks observed while RUNNABLE
   uint sched_dispatches;       // scheduler dispatch count
   uint sched_preemptions;      // timer-driven yield count
+
+  // Lab 4 synchronization ownership. These fields prevent cross-process
+  // release and allow exit() to recover abandoned locks.
+  int lab4_read_lock_held;
+  int lab4_write_lock_held;
+  int lab4_ticket_waiting;
+  int lab4_ticket_held;
+  uint lab4_ticket_number;
 };
 
 // Process memory is laid out contiguously, low addresses first:

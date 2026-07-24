@@ -32,6 +32,21 @@ int sort_numbers(const char*);
 int set_scheduling_info(int, int, int);
 int change_queue(int, int);
 int print_scheduling_info(void);
+int getcount(int);
+int getcpucount(int, int);
+int getcountmode(void);
+int produce(int);
+int try_produce(int);
+int consume(void);
+int try_consume(int*);
+int consume_value(int*);
+int rw_acquire_read(void);
+int rw_release_read(void);
+int rw_acquire_write(void);
+int rw_release_write(void);
+int ticket_acquire(void);
+int ticket_release(void);
+int ticket_turn(void);
 
 // ulib.c
 int stat(const char*, struct stat*);

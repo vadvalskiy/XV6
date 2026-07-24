@@ -27,6 +27,8 @@ main(void)
   consoleinit();   // console hardware
   uartinit();      // serial port
   pinit();         // process table
+  syscallcountinit(); // Lab4 syscall counters
+  lab4syncinit();  // Lab4 synchronization primitives
   tvinit();        // trap vectors
   binit();         // buffer cache
   fileinit();      // file table

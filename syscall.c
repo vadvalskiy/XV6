@@ -4,6 +4,7 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "proc.h"
+#include "spinlock.h"
 #include "x86.h"
 #include "syscall.h"
 
@@ -12,6 +13,143 @@
 // Arguments on the stack, from the user call to the C
 // library system call function. The saved user %esp points
 // to a saved program counter, and then the first argument.
+
+#define SYSCALL_COUNT_MAX 0x7fffffffU
+
+#if SYSCALL_COUNT_MODE != SYSCALL_COUNT_PERCPU
+static volatile uint syscall_count_global[NSYSCALL];
+#endif
+#if SYSCALL_COUNT_MODE == SYSCALL_COUNT_PERCPU
+struct syscall_count_row {
+  volatile uint sequence;
+  volatile uint count[NSYSCALL];
+} __attribute__((aligned(64)));
+static struct syscall_count_row syscall_count_cpu[NCPU];
+#endif
+#if SYSCALL_COUNT_MODE == SYSCALL_COUNT_GLOBAL_LOCKED
+static struct spinlock syscall_count_lock;
+#endif
+
+void
+syscallcountinit(void)
+{
+#if SYSCALL_COUNT_MODE == SYSCALL_COUNT_GLOBAL_LOCKED
+  initlock(&syscall_count_lock, "syscount");
+#endif
+}
+
+static int
+syscall_count_valid(int num)
+{
+  return num > 0 && num < NSYSCALL;
+}
+
+static void
+syscall_count_record(int num)
+{
+  if(!syscall_count_valid(num))
+    return;
+
+#if SYSCALL_COUNT_MODE == SYSCALL_COUNT_GLOBAL_UNLOCKED
+  if(syscall_count_global[num] < SYSCALL_COUNT_MAX)
+    syscall_count_global[num]++;
+#elif SYSCALL_COUNT_MODE == SYSCALL_COUNT_GLOBAL_LOCKED
+  acquire(&syscall_count_lock);
+  if(syscall_count_global[num] < SYSCALL_COUNT_MAX)
+    syscall_count_global[num]++;
+  release(&syscall_count_lock);
+#elif SYSCALL_COUNT_MODE == SYSCALL_COUNT_PERCPU
+  {
+    int id;
+    struct syscall_count_row *row;
+    pushcli();
+    id = cpuid();
+    if(id >= 0 && id < NCPU){
+      row = &syscall_count_cpu[id];
+      row->sequence++;
+      __sync_synchronize();
+      if(row->count[num] < SYSCALL_COUNT_MAX)
+        row->count[num]++;
+      __sync_synchronize();
+      row->sequence++;
+    }
+    popcli();
+  }
+#else
+#error "invalid SYSCALL_COUNT_MODE"
+#endif
+}
+
+#if SYSCALL_COUNT_MODE == SYSCALL_COUNT_PERCPU
+static uint
+syscall_count_read_cpu(int cpu_id, int num)
+{
+  uint before;
+  uint after;
+  uint value;
+  struct syscall_count_row *row = &syscall_count_cpu[cpu_id];
+
+  do{
+    before = row->sequence;
+    __sync_synchronize();
+    value = row->count[num];
+    __sync_synchronize();
+    after = row->sequence;
+  } while((before & 1U) || before != after);
+  return value;
+}
+#endif
+
+int
+syscall_count_get(int num)
+{
+  if(!syscall_count_valid(num))
+    return -1;
+
+#if SYSCALL_COUNT_MODE == SYSCALL_COUNT_PERCPU
+  {
+    int i;
+    uint value;
+    uint total = 0;
+    for(i = 0; i < NCPU; i++){
+      value = syscall_count_read_cpu(i, num);
+      if(total > SYSCALL_COUNT_MAX - value)
+        return (int)SYSCALL_COUNT_MAX;
+      total += value;
+    }
+    return (int)total;
+  }
+#elif SYSCALL_COUNT_MODE == SYSCALL_COUNT_GLOBAL_LOCKED
+  {
+    uint total;
+    acquire(&syscall_count_lock);
+    total = syscall_count_global[num];
+    release(&syscall_count_lock);
+    return (int)total;
+  }
+#else
+  return (int)syscall_count_global[num];
+#endif
+}
+
+int
+syscall_count_getcpu(int cpu_id, int num)
+{
+  if(cpu_id < 0 || cpu_id >= NCPU || !syscall_count_valid(num))
+    return -1;
+#if SYSCALL_COUNT_MODE == SYSCALL_COUNT_PERCPU
+  return (int)syscall_count_read_cpu(cpu_id, num);
+#else
+  // A shared counter has no meaningful per-CPU decomposition.
+  return -1;
+#endif
+}
+
+int
+syscall_count_mode(void)
+{
+  return SYSCALL_COUNT_MODE;
+}
 
 // Fetch the int at addr from the current process.
 int
@@ -123,6 +261,21 @@ extern int sys_sort_numbers(void);
 extern int sys_set_scheduling_info(void);
 extern int sys_change_queue(void);
 extern int sys_print_scheduling_info(void);
+extern int sys_getcount(void);
+extern int sys_getcpucount(void);
+extern int sys_getcountmode(void);
+extern int sys_produce(void);
+extern int sys_try_produce(void);
+extern int sys_consume(void);
+extern int sys_consume_value(void);
+extern int sys_try_consume(void);
+extern int sys_rw_acquire_read(void);
+extern int sys_rw_release_read(void);
+extern int sys_rw_acquire_write(void);
+extern int sys_rw_release_write(void);
+extern int sys_ticket_acquire(void);
+extern int sys_ticket_release(void);
+extern int sys_ticket_turn(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -154,6 +307,21 @@ static int (*syscalls[])(void) = {
 [SYS_set_scheduling_info] sys_set_scheduling_info,
 [SYS_change_queue] sys_change_queue,
 [SYS_print_scheduling_info] sys_print_scheduling_info,
+[SYS_getcount] sys_getcount,
+[SYS_getcpucount] sys_getcpucount,
+[SYS_getcountmode] sys_getcountmode,
+[SYS_produce] sys_produce,
+[SYS_try_produce] sys_try_produce,
+[SYS_consume] sys_consume,
+[SYS_consume_value] sys_consume_value,
+[SYS_try_consume] sys_try_consume,
+[SYS_rw_acquire_read] sys_rw_acquire_read,
+[SYS_rw_release_read] sys_rw_release_read,
+[SYS_rw_acquire_write] sys_rw_acquire_write,
+[SYS_rw_release_write] sys_rw_release_write,
+[SYS_ticket_acquire] sys_ticket_acquire,
+[SYS_ticket_release] sys_ticket_release,
+[SYS_ticket_turn] sys_ticket_turn,
 };
 
 void
@@ -164,6 +332,7 @@ syscall(void)
 
   num = curproc->tf->eax;
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
+    syscall_count_record(num);
     curproc->tf->eax = syscalls[num]();
   } else {
     cprintf("%d %s: unknown sys call %d\n",

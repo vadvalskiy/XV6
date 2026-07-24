@@ -116,6 +116,8 @@ int             procinfo(int);
 struct cpu*     mycpu(void);
 struct proc*    myproc();
 void            pinit(void);
+void            lab4syncinit(void);
+void            lab4sync_cleanup(struct proc*);
 void            procdump(void);
 int             scheduler_tick(void);
 void            scheduler_waiting_tick(void);
@@ -168,6 +170,10 @@ int             fetchint(uint, int*);
 int             fetchstr(uint, char**);
 int             fetchbyte(uint, char*);
 void            syscall(void);
+void            syscallcountinit(void);
+int             syscall_count_get(int);
+int             syscall_count_getcpu(int, int);
+int             syscall_count_mode(void);
 
 // timer.c
 void            timerinit(void);

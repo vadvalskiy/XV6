@@ -11,4 +11,14 @@
 #define LOGSIZE      (MAXOPBLOCKS*3)  // max data blocks in on-disk log
 #define NBUF         (MAXOPBLOCKS*3)  // size of disk block cache
 #define FSSIZE       2000  // size of file system in blocks
+// Lab4 syscall-counting configuration.
+// 0: shared global counter without lock, 1: shared global counter with spinlock,
+// 2: per-CPU counters.  The final implementation uses the scalable per-CPU mode.
+#define SYSCALL_COUNT_GLOBAL_UNLOCKED 0
+#define SYSCALL_COUNT_GLOBAL_LOCKED   1
+#define SYSCALL_COUNT_PERCPU          2
+#ifndef SYSCALL_COUNT_MODE
+#define SYSCALL_COUNT_MODE            SYSCALL_COUNT_PERCPU
+#endif
+#define NSYSCALL      64  // size of syscall counter arrays
 
