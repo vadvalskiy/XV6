@@ -190,6 +190,7 @@ UPROGS=\
 	_workload_aging\
 	_schedtest\
 	_schedverify\
+	_scounttest\
 	_sh\
 	_stressfs\
 	_usertests\
