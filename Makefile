@@ -193,6 +193,7 @@ UPROGS=\
 	_scounttest\
 	_pctest\
 	_rwtest\
+	_tickettest\
 	_sh\
 	_stressfs\
 	_usertests\
