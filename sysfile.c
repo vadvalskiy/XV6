@@ -611,7 +611,9 @@ sys_sort_numbers(void)
   int nread;
   int i;
   int sign = 1;
-  int value = 0;
+  uint value = 0;
+  uint limit;
+  uint digit;
   int seen_digit = 0;
   int in_number = 0;
   int status = -1;
@@ -642,7 +644,12 @@ sys_sort_numbers(void)
             goto done;
           if(count >= SORT_MAX_NUMS)
             goto done;
-          nums[count++] = sign * value;
+          if(sign < 0 && value == 2147483648U)
+            nums[count++] = -2147483647 - 1;
+          else if(sign < 0)
+            nums[count++] = -(int)value;
+          else
+            nums[count++] = (int)value;
           in_number = 0;
           seen_digit = 0;
           sign = 1;
@@ -667,7 +674,11 @@ sys_sort_numbers(void)
       if(ch < '0' || ch > '9')
         goto done;
       seen_digit = 1;
-      value = value * 10 + (ch - '0');
+      digit = (uint)(ch - '0');
+      limit = sign < 0 ? 2147483648U : 2147483647U;
+      if(value > (limit - digit) / 10U)
+        goto done;
+      value = value * 10U + digit;
     }
   }
   if(nread < 0)
@@ -676,7 +687,12 @@ sys_sort_numbers(void)
   if(in_number){
     if(!seen_digit || count >= SORT_MAX_NUMS)
       goto done;
-    nums[count++] = sign * value;
+    if(sign < 0 && value == 2147483648U)
+      nums[count++] = -2147483647 - 1;
+    else if(sign < 0)
+      nums[count++] = -(int)value;
+    else
+      nums[count++] = (int)value;
   }
 
   fileclose(fp_in);

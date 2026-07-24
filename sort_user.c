@@ -95,7 +95,9 @@ read_numbers(int fd, int *out, int maxn)
   int in_number = 0;
   int seen_digit = 0;
   int sign = 1;
-  int value = 0;
+  uint value = 0;
+  uint limit;
+  uint digit;
 
   while((nread = read(fd, readbuf, sizeof(readbuf))) > 0){
     for(i = 0; i < nread; i++){
@@ -105,7 +107,12 @@ read_numbers(int fd, int *out, int maxn)
         if(in_number){
           if(!seen_digit || count >= maxn)
             return -1;
-          out[count++] = sign * value;
+          if(sign < 0 && value == 2147483648U)
+            out[count++] = -2147483647 - 1;
+          else if(sign < 0)
+            out[count++] = -(int)value;
+          else
+            out[count++] = (int)value;
           in_number = 0;
           seen_digit = 0;
           sign = 1;
@@ -130,7 +137,11 @@ read_numbers(int fd, int *out, int maxn)
       if(ch < '0' || ch > '9')
         return -1;
       seen_digit = 1;
-      value = value * 10 + (ch - '0');
+      digit = (uint)(ch - '0');
+      limit = sign < 0 ? 2147483648U : 2147483647U;
+      if(value > (limit - digit) / 10U)
+        return -1;
+      value = value * 10U + digit;
     }
   }
   if(nread < 0)
@@ -139,7 +150,12 @@ read_numbers(int fd, int *out, int maxn)
   if(in_number){
     if(!seen_digit || count >= maxn)
       return -1;
-    out[count++] = sign * value;
+    if(sign < 0 && value == 2147483648U)
+      out[count++] = -2147483647 - 1;
+    else if(sign < 0)
+      out[count++] = -(int)value;
+    else
+      out[count++] = (int)value;
   }
 
   return count;
@@ -160,6 +176,10 @@ main(int argc, char **argv)
     exit();
   }
 
+  // Measure the same end-to-end scope as sort_kernel: input, parsing,
+  // sorting, output creation, and output writes.
+  t0 = uptime();
+
   fdin = open(argv[1], O_RDONLY);
   if(fdin < 0){
     printf(2, "cannot open input file\n");
@@ -178,9 +198,7 @@ main(int argc, char **argv)
     exit();
   }
 
-  t0 = uptime();
   sort_ints(nums, count);
-  t1 = uptime();
 
   unlink(outpath); // open(O_CREATE) in xv6 does not truncate existing files.
   fdout = open(outpath, O_CREATE | O_WRONLY);
@@ -198,7 +216,9 @@ main(int argc, char **argv)
     }
   }
   close(fdout);
+  t1 = uptime();
 
-  printf(1, "user sort: %d numbers sorted into %s in %d ticks\n", count, outpath, t1 - t0);
+  printf(1, "user sort end-to-end: %d numbers sorted into %s in %d ticks\n",
+         count, outpath, t1 - t0);
   exit();
 }
