@@ -251,7 +251,7 @@ static int next_input_stamp = 1;
 
 #define TAB_KEY 0x09
 #define MAX_MATCHES 50
-#define MAX_FILENAME_LEN DIRSIZ
+#define MAX_FILENAME_LEN (DIRSIZ + 1)
 #define CGA_INPUT_LIMIT (24*80)
 
 static int
@@ -612,9 +612,12 @@ static int
 find_matching_files(char *prefix, char matches[][MAX_FILENAME_LEN], int max_matches)
 {
   char *basic_files[] = {
-    "cat", "cd", "echo", "find_sum", "forktest", "grep", "init", "kill",
-    "ln", "ls", "mkdir", "rm", "sh", "stressfs", "usertests", "wc", "zombie",
-    "README", "result.txt"
+    "cat", "cd", "dice", "echo", "find_sum", "forktest", "getpidtest",
+    "grep", "init", "kill", "lab1test", "lab2test", "ln", "ls", "mkdir",
+    "pctest", "pinfo_test", "rm", "rwtest", "schedtest", "schedverify",
+    "scounttest", "sh", "sort_kernel", "sort_user", "stressfs", "tickettest",
+    "usertests", "wc", "workload_aging", "workload_long", "workload_mixed",
+    "workload_short", "zombie", "README", "result.txt"
   };
   int basic_count = sizeof(basic_files) / sizeof(basic_files[0]);
   int match_count = 0;
