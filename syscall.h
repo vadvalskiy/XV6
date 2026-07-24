@@ -28,3 +28,5 @@
 #define SYS_set_scheduling_info 26
 #define SYS_change_queue 27
 #define SYS_print_scheduling_info 28
+
+#define SYS_waitstats 29

@@ -74,6 +74,13 @@ struct proc {
   int sched_consecutive_ticks; // ticks in the current uninterrupted run
   uint sched_arrival_tick;     // time of entering the current queue
   int sched_shell_path;        // init/sh lineage flag used to keep shell live
+  uint sched_created_tick;     // start of the current measurement epoch
+  uint sched_first_run_tick;   // first dispatch, or ~0U when never dispatched
+  uint sched_exit_tick;        // tick at process exit
+  uint sched_runtime_ticks;    // timer ticks observed while RUNNING
+  uint sched_runnable_ticks;   // timer ticks observed while RUNNABLE
+  uint sched_dispatches;       // scheduler dispatch count
+  uint sched_preemptions;      // timer-driven yield count
 };
 
 // Process memory is laid out contiguously, low addresses first:

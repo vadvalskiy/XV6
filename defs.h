@@ -10,6 +10,8 @@ struct sleeplock;
 struct stat;
 struct superblock;
 
+struct sched_stats;
+
 // bio.c
 void            binit(void);
 struct buf*     bread(uint, uint);
@@ -127,6 +129,7 @@ void            setproc(struct proc*);
 void            sleep(void*, struct spinlock*);
 void            userinit(void);
 int             wait(void);
+int             waitstats(struct sched_stats*);
 void            wakeup(void*);
 void            yield(void);
 

@@ -5,6 +5,7 @@
 #include "mmu.h"
 #include "x86.h"
 #include "proc.h"
+#include "schedstat.h"
 #include "spinlock.h"
 
 struct {
@@ -81,6 +82,13 @@ sched_init_proc_fields(struct proc *p)
   p->sched_consecutive_ticks = 0;
   p->sched_arrival_tick = ticks;
   p->sched_shell_path = 0;
+  p->sched_created_tick = ticks;
+  p->sched_first_run_tick = ~0U;
+  p->sched_exit_tick = 0;
+  p->sched_runtime_ticks = 0;
+  p->sched_runnable_ticks = 0;
+  p->sched_dispatches = 0;
+  p->sched_preemptions = 0;
 }
 
 static void
@@ -434,6 +442,13 @@ fork(void)
   np->sched_wait_ticks = 0;
   np->sched_consecutive_ticks = 0;
   np->sched_arrival_tick = ticks;
+  np->sched_created_tick = ticks;
+  np->sched_first_run_tick = ~0U;
+  np->sched_exit_tick = 0;
+  np->sched_runtime_ticks = 0;
+  np->sched_runnable_ticks = 0;
+  np->sched_dispatches = 0;
+  np->sched_preemptions = 0;
   np->state = RUNNABLE;
 
   release(&ptable.lock);
@@ -482,31 +497,41 @@ exit(void)
   }
 
   // Jump into the scheduler, never to return.
+  curproc->sched_exit_tick = ticks;
   curproc->state = ZOMBIE;
   sched();
   panic("zombie exit");
 }
 
-// Wait for a child process to exit and return its pid.
+// Wait for a child process to exit and optionally return its scheduler metrics.
 // Return -1 if this process has no children.
-int
-wait(void)
+static int
+wait_internal(struct sched_stats *stats)
 {
   struct proc *p;
   int havekids, pid;
   struct proc *curproc = myproc();
-  
+
   acquire(&ptable.lock);
   for(;;){
-    // Scan through table looking for exited children.
     havekids = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->parent != curproc)
         continue;
       havekids = 1;
       if(p->state == ZOMBIE){
-        // Found one.
         pid = p->pid;
+        if(stats){
+          stats->pid = p->pid;
+          stats->queue = p->sched_queue;
+          stats->created_tick = p->sched_created_tick;
+          stats->first_run_tick = p->sched_first_run_tick;
+          stats->exit_tick = p->sched_exit_tick;
+          stats->runtime_ticks = p->sched_runtime_ticks;
+          stats->runnable_ticks = p->sched_runnable_ticks;
+          stats->dispatches = p->sched_dispatches;
+          stats->preemptions = p->sched_preemptions;
+        }
         kfree(p->kstack);
         p->kstack = 0;
         freevm(p->pgdir);
@@ -520,15 +545,26 @@ wait(void)
       }
     }
 
-    // No point waiting if we don't have any children.
     if(!havekids || curproc->killed){
       release(&ptable.lock);
       return -1;
     }
-
-    // Wait for children to exit.  (See wakeup1 call in proc_exit.)
-    sleep(curproc, &ptable.lock);  //DOC: wait-sleep
+    sleep(curproc, &ptable.lock);
   }
+}
+
+int
+wait(void)
+{
+  return wait_internal(0);
+}
+
+int
+waitstats(struct sched_stats *stats)
+{
+  if(stats == 0)
+    return -1;
+  return wait_internal(stats);
 }
 
 //PAGEBREAK: 42
@@ -580,6 +616,9 @@ scheduler(void)
       p->state = RUNNING;
       p->sched_wait_ticks = 0;
       p->sched_consecutive_ticks = 0;
+      if(p->sched_first_run_tick == ~0U)
+        p->sched_first_run_tick = ticks;
+      p->sched_dispatches++;
 
       swtch(&(c->scheduler), p->context);
       switchkvm();
@@ -840,6 +879,7 @@ scheduler_tick(void)
       c->sched_queue_ticks = 0;
     }
     p->sched_consecutive_ticks++;
+    p->sched_runtime_ticks++;
     c->sched_queue_ticks++;
 
     if(p->sched_queue == SCHED_Q_RR &&
@@ -849,6 +889,8 @@ scheduler_tick(void)
     if(c->sched_queue_ticks >= sched_queue_quota(c->sched_queue))
       should_yield = 1;
   }
+  if(should_yield)
+    p->sched_preemptions++;
   release(&ptable.lock);
   return should_yield;
 }
@@ -873,6 +915,7 @@ scheduler_waiting_tick(void)
       continue;
 
     p->sched_wait_ticks++;
+    p->sched_runnable_ticks++;
     newq = p->sched_queue;
 
     if(p->sched_queue == SCHED_Q_FCFS && p->sched_wait_ticks >= SCHED_AGING_TICKS)

@@ -113,6 +113,7 @@ extern int sys_sbrk(void);
 extern int sys_sleep(void);
 extern int sys_unlink(void);
 extern int sys_wait(void);
+extern int sys_waitstats(void);
 extern int sys_write(void);
 extern int sys_uptime(void);
 extern int sys_setSeed(void);
@@ -127,6 +128,7 @@ static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
 [SYS_exit]    sys_exit,
 [SYS_wait]    sys_wait,
+[SYS_waitstats] sys_waitstats,
 [SYS_pipe]    sys_pipe,
 [SYS_read]    sys_read,
 [SYS_kill]    sys_kill,

@@ -1,10 +1,12 @@
 struct stat;
 struct rtcdate;
+struct sched_stats;
 
 // system calls
 int fork(void);
 int exit(void) __attribute__((noreturn));
 int wait(void);
+int waitstats(struct sched_stats*);
 int pipe(int*);
 int write(int, const void*, int);
 int read(int, void*, int);

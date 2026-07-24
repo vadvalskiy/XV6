@@ -1,19 +1,7 @@
 #include "types.h"
 #include "stat.h"
 #include "user.h"
-
-static void
-busy(int ticks)
-{
-  int start = uptime();
-  volatile int x = getpid();
-  int i;
-
-  while(uptime() - start < ticks){
-    for(i = 0; i < 25000; i++)
-      x += i ^ getpid();
-  }
-}
+#include "cpuwork.h"
 
 int
 main(int argc, char *argv[])
@@ -21,41 +9,34 @@ main(int argc, char *argv[])
   int i, pid, donepid;
   int pfd[2];
   char go = 'x';
+  int units[4] = {180, 240, 300, 360};
 
-  printf(1, "workload_short: light CPU workload in RR queue\n");
+  printf(1, "workload_short: deterministic CPU work in RR queue\n");
   for(i = 0; i < 4; i++){
     if(pipe(pfd) < 0){
       printf(2, "pipe failed\n");
       exit();
     }
-
     pid = fork();
     if(pid < 0){
       printf(2, "fork failed\n");
-      close(pfd[0]);
-      close(pfd[1]);
       exit();
     }
-
     if(pid == 0){
       close(pfd[1]);
       if(read(pfd[0], &go, 1) != 1)
         exit();
       close(pfd[0]);
-      busy(15 + i * 5);
+      cpu_work(units[i], 1);
       exit();
     }
-
     close(pfd[0]);
-    if(set_scheduling_info(pid, 2 + i, 85) < 0)
-      printf(2, "set_scheduling_info failed for pid %d\n", pid);
-    if(change_queue(pid, 0) < 0)
-      printf(2, "change_queue failed for pid %d\n", pid);
-    if(write(pfd[1], &go, 1) != 1)
-      printf(2, "release failed for pid %d\n", pid);
+    if(set_scheduling_info(pid, 2 + i, 85) < 0 || change_queue(pid, 0) < 0)
+      printf(2, "scheduler configuration failed for pid %d\n", pid);
+    printf(1, "configured child %d: queue=0 burst=%d work=%d units\n", pid, 2+i, units[i]);
+    write(pfd[1], &go, 1);
     close(pfd[1]);
   }
-
   print_scheduling_info();
   for(i = 0; i < 4; i++){
     donepid = wait();
