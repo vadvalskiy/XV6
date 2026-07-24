@@ -16,6 +16,10 @@
 #include "file.h"
 #include "fcntl.h"
 
+#define SORT_BUFSZ PGSIZE
+#define SORT_MAX_NUMS 1024
+#define SORT_OUTPATH_MAX 128
+
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
 static int
@@ -181,16 +185,13 @@ isdirempty(struct inode *dp)
 }
 
 //PAGEBREAK!
-int
-sys_unlink(void)
+static int
+unlink_path(char *path)
 {
   struct inode *ip, *dp;
   struct dirent de;
-  char name[DIRSIZ], *path;
+  char name[DIRSIZ];
   uint off;
-
-  if(argstr(0, &path) < 0)
-    return -1;
 
   begin_op();
   if((dp = nameiparent(path, name)) == 0){
@@ -229,13 +230,23 @@ sys_unlink(void)
   iunlockput(ip);
 
   end_op();
-
   return 0;
 
 bad:
   iunlockput(dp);
   end_op();
   return -1;
+}
+
+//PAGEBREAK!
+int
+sys_unlink(void)
+{
+  char *path;
+
+  if(argstr(0, &path) < 0)
+    return -1;
+  return unlink_path(path);
 }
 
 static struct inode*
@@ -441,4 +452,256 @@ sys_pipe(void)
   fd[0] = fd0;
   fd[1] = fd1;
   return 0;
+}
+
+static int
+is_space(char c)
+{
+  return c == ' ' || c == '\n' || c == '\r' || c == '\t';
+}
+
+static void
+sort_ints(int *a, int n)
+{
+  int i;
+
+  for(i = 1; i < n; i++){
+    int key = a[i];
+    int j = i - 1;
+    while(j >= 0 && a[j] > key){
+      a[j + 1] = a[j];
+      j--;
+    }
+    a[j + 1] = key;
+  }
+}
+
+static int
+append_suffix_user(const char *src, char *dst, int dstsz, const char *suf)
+{
+  int i = 0;
+  int j = 0;
+  char c;
+
+  for(;; i++){
+    if(i >= dstsz - 1)
+      return -1;
+    if(fetchbyte((uint)(src + i), &c) < 0)
+      return -1;
+    dst[i] = c;
+    if(c == 0)
+      break;
+  }
+
+  while(suf[j]){
+    if(i >= dstsz - 1)
+      return -1;
+    dst[i++] = suf[j++];
+  }
+  dst[i] = 0;
+  return 0;
+}
+
+static int
+int_to_line(int v, char *dst, int dstsz)
+{
+  char tmp[16];
+  int n = 0;
+  int i;
+  uint x;
+
+  if(dstsz < 3)
+    return -1;
+
+  if(v < 0){
+    dst[n++] = '-';
+    x = (uint)(-(v + 1)) + 1;
+  } else {
+    x = (uint)v;
+  }
+
+  i = 0;
+  do{
+    if(i >= (int)sizeof(tmp))
+      return -1;
+    tmp[i++] = '0' + (x % 10);
+    x /= 10;
+  } while(x > 0);
+
+  if(n + i + 1 >= dstsz)
+    return -1;
+
+  while(i > 0)
+    dst[n++] = tmp[--i];
+  dst[n++] = '\n';
+  return n;
+}
+
+static struct file*
+open_kernel_file_ro(char *path)
+{
+  struct inode *ip;
+  struct file *f;
+
+  begin_op();
+  if((ip = namei(path)) == 0){
+    end_op();
+    return 0;
+  }
+  ilock(ip);
+  if(ip->type == T_DIR){
+    iunlockput(ip);
+    end_op();
+    return 0;
+  }
+  if((f = filealloc()) == 0){
+    iunlockput(ip);
+    end_op();
+    return 0;
+  }
+  f->type = FD_INODE;
+  f->readable = 1;
+  f->writable = 0;
+  f->ip = ip;
+  f->off = 0;
+  iunlock(ip);
+  end_op();
+  return f;
+}
+
+static struct file*
+create_kernel_file_wo(char *path)
+{
+  struct inode *ip;
+  struct file *f;
+
+  // Make repeated runs deterministic: xv6 O_CREATE does not truncate an
+  // existing file, so remove an old output before creating the new one.
+  unlink_path(path);
+
+  begin_op();
+  if((ip = create(path, T_FILE, 0, 0)) == 0){
+    end_op();
+    return 0;
+  }
+  if((f = filealloc()) == 0){
+    iunlockput(ip);
+    end_op();
+    return 0;
+  }
+  f->type = FD_INODE;
+  f->readable = 0;
+  f->writable = 1;
+  f->ip = ip;
+  f->off = 0;
+  iunlock(ip);
+  end_op();
+  return f;
+}
+
+int
+sys_sort_numbers(void)
+{
+  char *path;
+  char buf[128];
+  char outpath[SORT_OUTPATH_MAX];
+  char line[32];
+  int *nums = 0;
+  int count = 0;
+  int nread;
+  int i;
+  int sign = 1;
+  int value = 0;
+  int seen_digit = 0;
+  int in_number = 0;
+  int status = -1;
+  struct file *fp_in = 0;
+  struct file *fp_out = 0;
+
+  if(argstr(0, &path) < 0)
+    return -1;
+
+  if(append_suffix_user(path, outpath, sizeof(outpath), ".kernel.sorted") < 0)
+    return -1;
+
+  nums = (int*)kalloc();
+  if(nums == 0)
+    return -1;
+
+  fp_in = open_kernel_file_ro(path);
+  if(fp_in == 0)
+    goto done;
+
+  while((nread = fileread(fp_in, buf, sizeof(buf))) > 0){
+    for(i = 0; i < nread; i++){
+      char ch = buf[i];
+
+      if(is_space(ch)){
+        if(in_number){
+          if(!seen_digit)
+            goto done;
+          if(count >= SORT_MAX_NUMS)
+            goto done;
+          nums[count++] = sign * value;
+          in_number = 0;
+          seen_digit = 0;
+          sign = 1;
+          value = 0;
+        }
+        continue;
+      }
+
+      if(!in_number){
+        in_number = 1;
+        seen_digit = 0;
+        sign = 1;
+        value = 0;
+        if(ch == '-'){
+          sign = -1;
+          continue;
+        }
+        if(ch == '+')
+          continue;
+      }
+
+      if(ch < '0' || ch > '9')
+        goto done;
+      seen_digit = 1;
+      value = value * 10 + (ch - '0');
+    }
+  }
+  if(nread < 0)
+    goto done;
+
+  if(in_number){
+    if(!seen_digit || count >= SORT_MAX_NUMS)
+      goto done;
+    nums[count++] = sign * value;
+  }
+
+  fileclose(fp_in);
+  fp_in = 0;
+
+  sort_ints(nums, count);
+
+  fp_out = create_kernel_file_wo(outpath);
+  if(fp_out == 0)
+    goto done;
+
+  for(i = 0; i < count; i++){
+    int n = int_to_line(nums[i], line, sizeof(line));
+    if(n <= 0 || filewrite(fp_out, line, n) != n)
+      goto done;
+  }
+
+  status = 0;
+
+done:
+  if(fp_in)
+    fileclose(fp_in);
+  if(fp_out)
+    fileclose(fp_out);
+  if(nums)
+    kfree((char*)nums);
+  return status;
 }

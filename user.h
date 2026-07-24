@@ -23,6 +23,10 @@ int getpid(void);
 char* sbrk(int);
 int sleep(int);
 int uptime(void);
+int setSeed(void);
+int getRandomNumber(int, int*);
+int process_information(int);
+int sort_numbers(const char*);
 
 // ulib.c
 int stat(const char*, struct stat*);

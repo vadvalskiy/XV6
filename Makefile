@@ -167,9 +167,11 @@ mkfs: mkfs.c fs.h
 
 UPROGS=\
 	_cat\
+	_dice\
 	_echo\
 	_find_sum\
 	_forktest\
+	_getpidtest\
 	_grep\
 	_init\
 	_lab1test\
@@ -177,6 +179,7 @@ UPROGS=\
 	_ln\
 	_ls\
 	_mkdir\
+	_pinfo_test\
 	_rm\
 	_sh\
 	_stressfs\

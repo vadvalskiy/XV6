@@ -12,6 +12,15 @@ struct {
   struct proc proc[NPROC];
 } ptable;
 
+static char *pstate_names[] = {
+[UNUSED]    "UNUSED",
+[EMBRYO]    "EMBRYO",
+[SLEEPING]  "SLEEPING",
+[RUNNABLE]  "RUNNABLE",
+[RUNNING]   "RUNNING",
+[ZOMBIE]    "ZOMBIE"
+};
+
 static struct proc *initproc;
 
 int nextpid = 1;
@@ -496,6 +505,92 @@ kill(int pid)
   return -1;
 }
 
+int
+procinfo(int pid)
+{
+  struct proc *p;
+  struct proc *q;
+  int found = 0;
+  int parent_pid = -1;
+  int children[NPROC];
+  int siblings[NPROC];
+  int nchildren = 0;
+  int nsiblings = 0;
+  int depth = 0;
+  char *state = "???";
+  int state_idx = UNUSED;
+  int i;
+
+  acquire(&ptable.lock);
+
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->state != UNUSED && p->pid == pid){
+      found = 1;
+      break;
+    }
+  }
+
+  if(!found){
+    release(&ptable.lock);
+    return -1;
+  }
+
+  parent_pid = p->parent ? p->parent->pid : -1;
+
+  for(q = ptable.proc; q < &ptable.proc[NPROC]; q++){
+    if(q->state != UNUSED && q->parent == p && nchildren < NPROC)
+      children[nchildren++] = q->pid;
+  }
+
+  if(p->parent){
+    for(q = ptable.proc; q < &ptable.proc[NPROC]; q++){
+      if(q->state != UNUSED && q->parent == p->parent && q != p && nsiblings < NPROC)
+        siblings[nsiblings++] = q->pid;
+    }
+  }
+
+  for(q = p; q->parent; q = q->parent)
+    depth++;
+
+  state_idx = p->state;
+  if(state_idx >= 0 && state_idx < NELEM(pstate_names) && pstate_names[state_idx])
+    state = pstate_names[state_idx];
+
+  release(&ptable.lock);
+
+  cprintf("Process_id: %d\n", pid);
+  cprintf("Parent_id: %d\n", parent_pid);
+
+  cprintf("Children's_id: ");
+  if(nchildren == 0){
+    cprintf("none");
+  } else {
+    for(i = 0; i < nchildren; i++){
+      if(i > 0)
+        cprintf(", ");
+      cprintf("%d", children[i]);
+    }
+  }
+  cprintf("\n");
+
+  cprintf("Siblings_id: ");
+  if(nsiblings == 0){
+    cprintf("none");
+  } else {
+    for(i = 0; i < nsiblings; i++){
+      if(i > 0)
+        cprintf(", ");
+      cprintf("%d", siblings[i]);
+    }
+  }
+  cprintf("\n");
+
+  cprintf("Depth: %d\n", depth);
+  cprintf("State: %s\n", state);
+
+  return 0;
+}
+
 //PAGEBREAK: 36
 // Print a process listing to console.  For debugging.
 // Runs when user types ^P on console.
@@ -503,14 +598,6 @@ kill(int pid)
 void
 procdump(void)
 {
-  static char *states[] = {
-  [UNUSED]    "unused",
-  [EMBRYO]    "embryo",
-  [SLEEPING]  "sleep ",
-  [RUNNABLE]  "runble",
-  [RUNNING]   "run   ",
-  [ZOMBIE]    "zombie"
-  };
   int i;
   struct proc *p;
   char *state;
@@ -519,8 +606,8 @@ procdump(void)
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     if(p->state == UNUSED)
       continue;
-    if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
-      state = states[p->state];
+    if(p->state >= 0 && p->state < NELEM(pstate_names) && pstate_names[p->state])
+      state = pstate_names[p->state];
     else
       state = "???";
     cprintf("%d %s %s", p->pid, state, p->name);
@@ -532,3 +619,95 @@ procdump(void)
     cprintf("\n");
   }
 }
+
+// int
+// procinfo(int pid)
+// {
+//   struct proc *p;
+//   struct proc *iter;
+//   int found = 0;
+//   int depth;
+//   int first;  // helper for printing commas
+
+//   acquire(&ptable.lock);
+
+//   // 1. Find the target process
+//   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+//     if(p->pid == pid){
+//       found = 1;
+//       break;
+//     }
+//   }
+
+//   if(!found){
+//     release(&ptable.lock);
+//     return -1;
+//   }
+
+//   // 2. Print basic info
+//   cprintf("Process_id: %d\n", p->pid);
+//   if(p->parent)
+//     cprintf("Parent_id: %d\n", p->parent->pid);
+//   else
+//     cprintf("Parent_id: none\n");
+
+//   // 3. Children
+//   cprintf("Children's_id: ");
+//   first = 1;
+//   for(iter = ptable.proc; iter < &ptable.proc[NPROC]; iter++){
+//     if(iter->parent == p && iter->state != UNUSED){
+//       if(!first)
+//         cprintf(", ");
+//       cprintf("%d", iter->pid);
+//       first = 0;
+//     }
+//   }
+//   if(first)  // no children
+//     cprintf("none");
+//   cprintf("\n");
+
+//   // 4. Siblings (same parent, different pid)
+//   cprintf("Siblings_id: ");
+//   first = 1;
+//   if(p->parent){
+//     for(iter = ptable.proc; iter < &ptable.proc[NPROC]; iter++){
+//       if(iter->parent == p->parent && iter->pid != pid && iter->state != UNUSED){
+//         if(!first)
+//           cprintf(", ");
+//         cprintf("%d", iter->pid);
+//         first = 0;
+//       }
+//     }
+//   }
+//   if(first)
+//     cprintf("none");
+//   cprintf("\n");
+
+//   // 5. Depth in process tree (distance to init, pid 1)
+//   depth = 0;
+//   if(p->pid > 1){
+//     struct proc *anc = p->parent;
+//     while(anc && anc->pid > 1){
+//       depth++;
+//       anc = anc->parent;
+//     }
+//   }
+//   cprintf("Depth: %d\n", depth);
+
+//   // 6. State
+//   static char *states[] = {
+//     [UNUSED]   "UNUSED",
+//     [EMBRYO]   "EMBRYO",
+//     [SLEEPING] "SLEEPING",
+//     [RUNNABLE] "RUNNABLE",
+//     [RUNNING]  "RUNNING",
+//     [ZOMBIE]   "ZOMBIE"
+//   };
+//   if(p->state >= 0 && p->state < NELEM(states))
+//     cprintf("State: %s\n", states[p->state]);
+//   else
+//     cprintf("State: unknown\n");
+
+//   release(&ptable.lock);
+//   return 0;
+// }

@@ -45,6 +45,18 @@ fetchstr(uint addr, char **pp)
   return -1;
 }
 
+// Fetch one byte from user memory at addr.
+int
+fetchbyte(uint addr, char *cp)
+{
+  struct proc *curproc = myproc();
+
+  if(addr >= curproc->sz)
+    return -1;
+  *cp = *(char*)addr;
+  return 0;
+}
+
 // Fetch the nth 32-bit system call argument.
 int
 argint(int n, int *ip)
@@ -103,6 +115,10 @@ extern int sys_unlink(void);
 extern int sys_wait(void);
 extern int sys_write(void);
 extern int sys_uptime(void);
+extern int sys_setSeed(void);
+extern int sys_getRandomNumber(void);
+extern int sys_process_information(void);
+extern int sys_sort_numbers(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -126,6 +142,10 @@ static int (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_setSeed] sys_setSeed,
+[SYS_getRandomNumber] sys_getRandomNumber,
+[SYS_process_information] sys_process_information,
+[SYS_sort_numbers] sys_sort_numbers,
 };
 
 void

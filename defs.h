@@ -110,6 +110,7 @@ void            exit(void);
 int             fork(void);
 int             growproc(int);
 int             kill(int);
+int             procinfo(int);
 struct cpu*     mycpu(void);
 struct proc*    myproc();
 void            pinit(void);
@@ -146,8 +147,6 @@ int             memcmp(const void*, const void*, uint);
 void*           memmove(void*, const void*, uint);
 void*           memset(void*, int, uint);
 char*           safestrcpy(char*, const char*, int);
-char*           strcpy(char*, const char*);
-int             strcmp(const char*, const char*);
 int             strlen(const char*);
 int             strncmp(const char*, const char*, uint);
 char*           strncpy(char*, const char*, int);
@@ -158,6 +157,7 @@ int             argptr(int, char**, int);
 int             argstr(int, char**);
 int             fetchint(uint, int*);
 int             fetchstr(uint, char**);
+int             fetchbyte(uint, char*);
 void            syscall(void);
 
 // timer.c

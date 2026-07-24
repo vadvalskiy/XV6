@@ -20,3 +20,7 @@
 #define SYS_link   19
 #define SYS_mkdir  20
 #define SYS_close  21
+#define SYS_setSeed 22
+#define SYS_getRandomNumber 23
+#define SYS_process_information 24
+#define SYS_sort_numbers 25
