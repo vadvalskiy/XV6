@@ -191,6 +191,8 @@ UPROGS=\
 	_schedtest\
 	_schedverify\
 	_scounttest\
+	_pctest\
+	_rwtest\
 	_sh\
 	_stressfs\
 	_usertests\
