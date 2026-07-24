@@ -20,6 +20,20 @@ main(void)
   dup(0);  // stderr
 
   for(;;){
+    
+    printf(1, "\n\n");
+    printf(1, "                                                 \\,`/ /      \n");
+    printf(1, "                  _  _  _  _   ___              _)..  `_      \n");
+    printf(1, "                 ( \\/ )/ )( \\ / __)            ( __  -\\    \n");
+    printf(1, "                  )  ( \\ \\/ /(  _ \\                '`.     \n");
+    printf(1, "                 (_/\\_) \\__/  \\___/               ( \\>_-_,\n");
+    printf(1, "                                                  _||_ ~-/    \n");
+    printf(1, "\n\n\n");
+    printf(1, "    Modified by group:\n");
+    printf(1, "    Meraj Rastegar 810102576\n");
+    printf(1, "    Ali Sadeghi 810102471\n");
+    printf(1, "    Meraj PourHosseiny 810102420\n\n");
+
     printf(1, "init: starting sh\n");
     pid = fork();
     if(pid < 0){
