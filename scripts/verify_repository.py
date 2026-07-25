@@ -31,9 +31,19 @@ def main() -> int:
     if not (ROOT / "xv6/Makefile").is_file(): errors.append("missing single cumulative xv6 source tree")
     if list(ROOT.glob("labs/*/xv6")): errors.append("parallel per-lab xv6 trees are forbidden")
     for lab in range(1, 5):
-        base = ROOT / f"docs/labs/lab{lab}"
-        for name in ("README.md", "assignment.pdf", "assignment.txt", "original-report.fa.md"):
-            if not (base / name).is_file(): errors.append(f"lab{lab} missing {name}")
+        slug = f"lab-{lab:02d}"
+        summary = ROOT / "docs" / "labs" / f"{slug}.md"
+        assignment = ROOT / "docs" / "assignments" / slug
+        report = ROOT / "reports" / slug
+        if not summary.is_file():
+            errors.append(f"missing Lab {lab} summary: {summary.relative_to(ROOT)}")
+        for name in ("assignment.fa.pdf", "assignment.fa.txt"):
+            path = assignment / name
+            if not path.is_file(): errors.append(f"missing Lab {lab} assignment artifact: {name}")
+        for name in ("report.fa.md", "report.fa.pdf"):
+            path = report / name
+            if not path.is_file(): errors.append(f"missing Lab {lab} report artifact: {name}")
+            elif path.stat().st_size == 0: errors.append(f"empty Lab {lab} report artifact: {name}")
     if (ROOT / "README.md").is_file():
         readme = (ROOT / "README.md").read_text()
         if readme.count("\n# ") or not readme.startswith("# Xv6 Operating System Labs\n"):

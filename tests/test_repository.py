@@ -7,6 +7,16 @@ class RepositoryTests(unittest.TestCase):
     def test_single_cumulative_tree(self) -> None:
         self.assertTrue((XV6 / "Makefile").is_file())
         self.assertFalse(list(ROOT.glob("labs/*/xv6")))
+
+    def test_all_lab_documents_are_present(self) -> None:
+        for lab in range(1, 5):
+            slug = f"lab-{lab:02d}"
+            self.assertTrue((ROOT / "docs" / "labs" / f"{slug}.md").is_file())
+            self.assertTrue((ROOT / "docs" / "assignments" / slug / "assignment.fa.pdf").is_file())
+            self.assertTrue((ROOT / "docs" / "assignments" / slug / "assignment.fa.txt").is_file())
+            self.assertTrue((ROOT / "reports" / slug / "report.fa.md").is_file())
+            self.assertTrue((ROOT / "reports" / slug / "report.fa.pdf").is_file())
+
     def test_all_phase_regressions_are_built(self) -> None:
         text = (XV6 / "Makefile").read_text()
         for program in ("_lab1test", "_lab2test", "_schedverify", "_scounttest", "_pctest", "_rwtest", "_tickettest"):

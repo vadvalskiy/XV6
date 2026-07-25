@@ -1,5 +1,3 @@
-> **Provenance notice:** This is the archived originally submitted report. Runtime outputs and conclusions in this file are `Originally reported`, not automatically `Verified`. Use the phase README and current regression workflow for validated claims.
-
 ---
 title: "گزارش کار پروژه سوم آزمایشگاه سیستم عامل"
 subtitle: "زمان‌بندی پردازه‌ها، زمان‌بند چندصفی، WRR، SJF، FCFS و aging"

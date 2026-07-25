@@ -8,24 +8,13 @@ First-party source modifications and repository automation are distributed under
 
 ## University assignment specifications
 
-The files below are retained solely to document the educational requirements and provenance of the implementation:
+The original course documents and their text transcriptions are retained under `docs/assignments/lab-01/` through `docs/assignments/lab-04/` solely to document the educational requirements and provenance of the implementation.
 
-```text
-docs/labs/lab1/assignment.pdf
-docs/labs/lab1/assignment.txt
-docs/labs/lab2/assignment.pdf
-docs/labs/lab2/assignment.txt
-docs/labs/lab3/assignment.pdf
-docs/labs/lab3/assignment.txt
-docs/labs/lab4/assignment.pdf
-docs/labs/lab4/assignment.txt
-```
+These materials are associated with the University of Tehran Operating Systems Laboratory. They are **not relicensed under the repository's MIT license**. Redistribution must remain educational and respect the institution's rights and policies.
 
-These materials are course documents associated with the University of Tehran operating-systems laboratory. They are **not relicensed under the repository's MIT license**. Redistribution should remain educational and must respect the institution's rights and policies.
+## Laboratory reports
 
-## Archived reports
-
-Files named `docs/labs/lab*/original-report.fa.md` preserve the team's originally submitted explanations and observations. They remain attributable to the project contributors and are not automatically granted for reuse beyond review of this educational repository.
+The team's complete reports are retained under `reports/lab-01/` through `reports/lab-04/` in Markdown and PDF form. The PDFs are final submitted artifacts; the Markdown files are editable source documents. They remain attributable to the named contributors and are not automatically granted for reuse beyond review of this educational repository.
 
 ## Repository standard
 
