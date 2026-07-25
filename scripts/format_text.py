@@ -1,11 +1,48 @@
 #!/usr/bin/env python3
-"""Normalize trailing whitespace and final newlines in first-party text files."""
+"""Normalize first-party repository text without rewriting archived source evidence."""
+from __future__ import annotations
+
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parents[1]
-SUFFIXES = {".c", ".h", ".S", ".py", ".sh", ".md", ".txt", ".yml", ".yaml"}
-for path in ROOT.rglob("*"):
-    if not path.is_file() or ".git" in path.parts or path.suffix not in SUFFIXES:
+ROOT_FILES = {
+    ".editorconfig",
+    ".gitattributes",
+    ".gitignore",
+    ".mailmap",
+    "CHANGELOG.md",
+    "CITATION.cff",
+    "CODE_OF_CONDUCT.md",
+    "CONTRIBUTING.md",
+    "Makefile",
+    "NOTICE.md",
+    "README.fa.md",
+    "README.md",
+    "SECURITY.md",
+}
+FIRST_PARTY_DIRS = {".github", "docs", "scripts", "tests"}
+SUFFIXES = {".md", ".py", ".sh", ".txt", ".yml", ".yaml", ".cff"}
+ARCHIVAL_NAMES = {"assignment.txt", "original-report.fa.md"}
+
+
+def eligible(path: Path) -> bool:
+    """Return whether *path* is maintained first-party text."""
+    relative = path.relative_to(ROOT)
+    if not path.is_file() or ".git" in relative.parts:
+        return False
+    if relative.as_posix() in ROOT_FILES:
+        return True
+    if not relative.parts or relative.parts[0] not in FIRST_PARTY_DIRS:
+        return False
+    if path.name in ARCHIVAL_NAMES:
+        return False
+    return path.suffix in SUFFIXES or path.name == "Makefile"
+
+
+for candidate in ROOT.rglob("*"):
+    if not eligible(candidate):
         continue
-    text = path.read_text(encoding="utf-8")
+    text = candidate.read_text(encoding="utf-8")
     normalized = "\n".join(line.rstrip() for line in text.splitlines()) + "\n"
-    if text != normalized: path.write_text(normalized, encoding="utf-8")
+    if text != normalized:
+        candidate.write_text(normalized, encoding="utf-8")
