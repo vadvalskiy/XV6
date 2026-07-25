@@ -2,7 +2,7 @@
 
 ## Design invariant
 
-The repository has exactly one executable xv6 source tree, located directly at the repository root. Every laboratory phase extends that tree and must preserve all previously introduced interfaces and user programs.
+The repository has exactly one executable source tree: `xv6/`. Every laboratory phase extends that tree and must preserve all previously introduced interfaces and user programs.
 
 ```text
 baseline commit

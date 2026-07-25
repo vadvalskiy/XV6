@@ -34,7 +34,7 @@ make test
 `make lint` succeeds only when:
 
 - all mandatory MRS-RS root files exist;
-- the cumulative xv6 source exists at the repository root and no nested copy exists;
+- exactly one cumulative `xv6/` tree exists;
 - all four phase document sets exist;
 - expected cumulative user programs are present in `UPROGS`;
 - syscall numbers are unique;

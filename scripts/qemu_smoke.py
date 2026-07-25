@@ -11,7 +11,7 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-XV6 = ROOT
+XV6 = ROOT / "xv6"
 COMMANDS = [
     ("lab1test", "LAB1 TEST PASS"),
     ("lab2test", "LAB2 TEST PASS"),

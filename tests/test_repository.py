@@ -2,11 +2,11 @@ from pathlib import Path
 import re
 import unittest
 ROOT = Path(__file__).resolve().parents[1]
-XV6 = ROOT
+XV6 = ROOT / "xv6"
 class RepositoryTests(unittest.TestCase):
     def test_single_cumulative_tree(self) -> None:
         self.assertTrue((XV6 / "Makefile").is_file())
-        self.assertFalse((ROOT / "xv6").exists())
+        self.assertFalse(list(ROOT.glob("labs/*/xv6")))
     def test_all_phase_regressions_are_built(self) -> None:
         text = (XV6 / "Makefile").read_text()
         for program in ("_lab1test", "_lab2test", "_schedverify", "_scounttest", "_pctest", "_rwtest", "_tickettest"):

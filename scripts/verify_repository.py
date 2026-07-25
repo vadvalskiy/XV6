@@ -7,8 +7,7 @@ import subprocess
 import sys
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_ROOT = ["README.md", "README.fa.md", ".gitignore", ".gitattributes", ".editorconfig",
-                 "Makefile", "LICENSE", "NOTICE.md", "CHANGELOG.md", "CITATION.cff",
-                 ".xv6-labs-base", ".xv6-labs-release"]
+                 "Makefile", "LICENSE", "NOTICE.md", "CHANGELOG.md", "CITATION.cff"]
 GENERATED_NAMES = {"fs.img", "xv6.img", "xv6memfs.img", "kernel", "kernelmemfs", "bootblock",
                    "entryother", "initcode", "mkfs", "vectors.S"}
 GENERATED_SUFFIXES = {".o", ".d", ".asm", ".sym", ".pyc", ".log"}
@@ -29,8 +28,7 @@ def main() -> int:
     errors: list[str] = []
     for name in REQUIRED_ROOT:
         if not (ROOT / name).is_file(): errors.append(f"missing root file: {name}")
-    if not (ROOT / "Makefile").is_file(): errors.append("missing cumulative xv6 source tree")
-    if (ROOT / "xv6").exists(): errors.append("nested xv6 source copy is forbidden")
+    if not (ROOT / "xv6/Makefile").is_file(): errors.append("missing single cumulative xv6 source tree")
     if list(ROOT.glob("labs/*/xv6")): errors.append("parallel per-lab xv6 trees are forbidden")
     for lab in range(1, 5):
         base = ROOT / f"docs/labs/lab{lab}"
@@ -43,16 +41,16 @@ def main() -> int:
         for name, email, login in CONTRIBUTORS:
             for value in (name, email, login):
                 if value not in readme: errors.append(f"README missing contributor value: {value}")
-    makefile = (ROOT / "Makefile").read_text()
+    makefile = (ROOT / "xv6/Makefile").read_text()
     for program in EXPECTED_PROGRAMS:
         if program not in makefile: errors.append(f"cumulative UPROGS missing {program}")
-    syscall_h = (ROOT / "syscall.h").read_text()
+    syscall_h = (ROOT / "xv6/syscall.h").read_text()
     numbers = re.findall(r"^#define\s+SYS_\w+\s+(\d+)\s*$", syscall_h, re.M)
     if len(numbers) != len(set(numbers)): errors.append("duplicate syscall numbers")
     key_files = ["find_sum.c", "lab1test.c", "lab2test.c", "schedverify.c", "schedstat.h",
                  "scounttest.c", "pctest.c", "rwtest.c", "tickettest.c"]
     for name in key_files:
-        if not (ROOT / name).is_file(): errors.append(f"missing cumulative source: {name}")
+        if not (ROOT / "xv6" / name).is_file(): errors.append(f"missing cumulative source: {name}")
     for path in tracked():
         rel = path.relative_to(ROOT)
         if path.name in GENERATED_NAMES or path.suffix in GENERATED_SUFFIXES or "dist" in rel.parts:

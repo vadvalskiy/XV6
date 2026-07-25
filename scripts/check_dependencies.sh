@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
-required=(gcc ld objdump objcopy make perl python3 git tar)
+required=(gcc ld objdump objcopy make perl python3 git)
 missing=()
 for command in "${required[@]}"; do
   command -v "$command" >/dev/null 2>&1 || missing+=("$command")

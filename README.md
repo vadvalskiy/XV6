@@ -9,7 +9,7 @@
 
 ## Overview
 
-This repository contains a **single cumulative xv6/x86 operating system** developed through four serial laboratory phases. Each phase modifies the same kernel and user-space source tree: Lab 2 builds on Lab 1, Lab 3 builds on Labs 1–2, and Lab 4 builds on Labs 1–3. The final executable system is therefore the integrated repository-root source tree, not four independent xv6 copies.
+This repository contains a **single cumulative xv6/x86 operating system** developed through four serial laboratory phases. Each phase modifies the same kernel and user-space source tree: Lab 2 builds on Lab 1, Lab 3 builds on Labs 1–2, and Lab 4 builds on Labs 1–3. The final executable system is therefore the integrated `xv6/` tree, not four independent xv6 copies.
 
 The cumulative kernel adds interactive console editing, checked user utilities, system calls and kernel/user sorting, a configurable multi-level scheduler, and multicore synchronization experiments. Original assignment specifications and submitted reports are retained under `docs/labs/` for provenance, but they are not alternative source trees and are not treated as newly reproduced evidence.
 
@@ -53,8 +53,8 @@ The system keeps the original xv6 kernel/user boundary and extends it in-place:
 - `syscall.c`, `sysproc.c`, `sysfile.c`, `user.h`, and `usys.S` expose the cumulative Lab 2–4 ABI;
 - `proc.c`, `proc.h`, `trap.c`, `schedstat.h`, and `cpuwork.h` implement scheduling state, quanta, aging, and measurements;
 - `sysproc.c` contains the selectable syscall counters and synchronization services;
-- user programs in root-level `*.c` files exercise both the original xv6 facilities and every cumulative laboratory feature;
-- the root `Makefile` combines xv6 build rules with `scripts/`-backed host verification and defines the reproducible host-side execution contract.
+- user programs in `xv6/*.c` exercise both the original xv6 facilities and every cumulative laboratory feature;
+- the root `Makefile` and `scripts/` define the reproducible host-side execution contract.
 
 A detailed component and interface description is available in [`docs/architecture.md`](docs/architecture.md).
 
@@ -62,21 +62,37 @@ A detailed component and interface description is available in [`docs/architectu
 
 ```text
 Xv6-Operating-System-Labs/
-├── console.c, kbd.c                    # Lab 1 interactive console editing and keyboard handling
-├── find_sum.c, lab1test.c              # Checked numeric utility and Lab 1 regression program
-├── syscall.c, sysproc.c, sysfile.c     # Cumulative ABI, counters, synchronization, and kernel sorting
-├── proc.c, proc.h, trap.c              # Lab 3 scheduling state, dispatch, quanta, aging, and statistics
-├── cpuwork.h, schedstat.h               # Deterministic workloads and scheduling measurement ABI
-├── schedverify.c, scounttest.c          # Scheduler and syscall-counter regression programs
-├── pctest.c, rwtest.c, tickettest.c     # Lab 4 synchronization regressions
-├── Makefile                             # xv6 image/QEMU/dist rules plus repository verification targets
-├── docs/                                # Labs, architecture, verification, standards, and maintenance notes
-├── scripts/                             # Build verification, QEMU smoke, matrix, and history checks
-├── tests/                               # Fast host-side repository regression tests
-├── .github/workflows/                   # Push/PR CI and full release verification matrix
-├── NOTICE.md                            # xv6, assignment, report, and standard rights information
-├── LICENSE                              # MIT license for xv6 and repository source code
-└── README.md                            # Project overview and execution entry point
+├── xv6/                              # Single cumulative xv6/x86 kernel and user-space source tree
+│   ├── console.c, kbd.c              # Lab 1 interactive console editing and keyboard handling
+│   ├── find_sum.c, lab1test.c        # Checked numeric utility and Lab 1 regression program
+│   ├── syscall.c, sysproc.c          # Cumulative syscall dispatch, counters, and synchronization services
+│   ├── sysfile.c                     # Checked kernel-side file parsing and sorting entry point
+│   ├── sort_kernel.c, sort_user.c    # Equivalent end-to-end Lab 2 sorting paths
+│   ├── proc.c, proc.h, trap.c        # Lab 3 scheduler state, dispatch, quanta, aging, and statistics
+│   ├── cpuwork.h, schedstat.h        # Deterministic workloads and scheduling measurement ABI
+│   ├── schedverify.c                 # Automated Lab 3 scheduler regression program
+│   ├── scounttest.c                  # Lab 4 syscall-counter correctness and benchmark driver
+│   ├── pctest.c, rwtest.c            # Bounded-buffer and reader-writer lock regressions
+│   ├── tickettest.c                  # FIFO ticket-lock regression and cancellation checks
+│   └── Makefile                      # Kernel, filesystem image, QEMU, dist, and counter-mode build rules
+├── docs/
+│   ├── labs/lab1/ ... lab4/          # Assignment PDFs/text, archived reports, and phase-specific notes
+│   ├── maintenance/                  # Reconstructed-history and GitHub publication guidance
+│   ├── standards/                    # Retained MRS repository standard used for this migration
+│   ├── architecture.md               # Cumulative kernel architecture and phase dependency map
+│   └── verification.md               # Evidence classes, commands, and success criteria
+├── scripts/
+│   ├── verify_builds.sh              # Clean source, dist, and all counter-mode build verification
+│   ├── qemu_smoke.py                 # Boots one image and checks all Lab 1–4 PASS markers
+│   ├── run_counter_matrix.sh         # Builds/runs modes 0–2 with one and four CPUs
+│   ├── verify_repository.py          # MRS-RS and cumulative-tree invariant checks
+│   └── check_attribution.py          # Verifies three-person attribution on every commit
+├── tests/                             # Fast host-side repository regression tests
+├── .github/workflows/                # Push/PR CI and full release verification matrix
+├── Makefile                           # Standard setup, build, run, test, verify, and clean targets
+├── NOTICE.md                          # xv6, assignment, report, and standard rights information
+├── LICENSE                            # MIT license for xv6 and repository source code
+└── README.md                          # Project overview and execution entry point
 ```
 
 ## Getting started
@@ -106,7 +122,7 @@ make setup
 make build
 ```
 
-Successful completion produces `kernel`, `fs.img`, and `xv6.img` locally. These generated artifacts are intentionally ignored by Git.
+Successful completion produces `xv6/kernel`, `xv6/fs.img`, and `xv6/xv6.img` locally. These generated artifacts are intentionally ignored by Git.
 
 ### Run
 

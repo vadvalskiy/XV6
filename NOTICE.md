@@ -2,7 +2,7 @@
 
 ## xv6 source code
 
-The root-level kernel and user-space source tree is derived from the MIT xv6/x86 teaching operating system. Its original copyright notice and MIT license are preserved in the root `LICENSE` file.
+The `xv6/` source tree is derived from the MIT xv6/x86 teaching operating system. Its original copyright notice and MIT license are preserved in both the root `LICENSE` and `xv6/LICENSE` files.
 
 First-party source modifications and repository automation are distributed under the same MIT license, subject to the rights held by their respective contributors.
 
