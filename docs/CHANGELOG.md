@@ -2,13 +2,39 @@
 
 This academic repository does not use artificial semantic versions. Changes are organized by cumulative laboratory phase and by the reconstructed Git history.
 
+## 27 July 2026 — public repository cleanup
+
+### Documentation and privacy
+
+- consolidated reports and project policy files under `docs/`;
+- removed the separate Persian README, citation metadata, mailmap, and internal migration records;
+- removed public email literals from maintained documentation and verification scripts;
+- corrected the counter-matrix CLI argument handling and added a regression test.
+
+## 26 July 2026 — repository layout and artifact correction
+
+### Structure
+
+- moved the single cumulative kernel and user-space tree into `xv6/`;
+- restored a clean repository-level task runner and path-aware CI tooling;
+- removed migration-only hidden marker files;
+- kept xv6 build products out of the repository root.
+
+### Documentation artifacts
+
+- restored all four complete Markdown reports;
+- added all four final PDF reports under `docs/reports/`;
+- separated assignment specifications into `docs/assignments/`;
+- added phase summaries and explicit evidence/provenance links;
+- corrected attribution verification so upstream xv6 commits are excluded from coursework author checks.
+
 ## 25 July 2026 — cumulative repository reconstruction
 
 ### Repository architecture
 
-- replaced parallel per-Lab xv6 copies with one cumulative xv6 source tree at the repository root;
-- preserved assignment specifications and original reports under `docs/labs/`;
-- added an MRS-RS-compliant root structure, task runner, notices, and maintenance documentation;
+- replaced parallel per-Lab xv6 copies with one cumulative xv6 source tree;
+- preserved assignment specifications and report sources as reconstruction inputs;
+- added a focused public repository layout, task runner, notices, and verification documentation;
 - reconstructed an atomic, serial Git history without fabricating historical timestamps.
 
 ### Lab 1

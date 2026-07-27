@@ -17,5 +17,5 @@ Lab 4 adds synchronization experiments and kernel services to the complete Lab 1
 ## Evidence
 
 - milestone: `lab4-complete`;
-- report: [`reports/lab-04/report.fa.md`](../../reports/lab-04/report.fa.md) and [`report.fa.pdf`](../../reports/lab-04/report.fa.pdf);
+- report: [`docs/reports/lab-04/report.fa.md`](../reports/lab-04/report.fa.md) and [`report.fa.pdf`](../reports/lab-04/report.fa.pdf);
 - assignment: [`docs/assignments/lab-04/`](../assignments/lab-04/).

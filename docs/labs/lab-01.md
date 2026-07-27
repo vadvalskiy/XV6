@@ -17,5 +17,5 @@ Lab 1 establishes the cumulative baseline and introduces the first user-visible 
 ## Evidence
 
 - milestone: `lab1-complete`;
-- report: [`reports/lab-01/report.fa.md`](../../reports/lab-01/report.fa.md) and [`report.fa.pdf`](../../reports/lab-01/report.fa.pdf);
+- report: [`docs/reports/lab-01/report.fa.md`](../reports/lab-01/report.fa.md) and [`report.fa.pdf`](../reports/lab-01/report.fa.pdf);
 - assignment: [`docs/assignments/lab-01/`](../assignments/lab-01/).

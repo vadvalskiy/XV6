@@ -13,6 +13,6 @@ if ((build_only)); then exit 0; fi
 for mode in 0 1 2; do
   for cpus in 1 4; do
     python3 "$root/scripts/qemu_smoke.py" --cpus "$cpus" \
-      --extra-cflags "-DSYSCALL_COUNT_MODE=$mode"
+      "--extra-cflags=-DSYSCALL_COUNT_MODE=$mode"
   done
 done

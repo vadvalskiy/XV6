@@ -14,12 +14,8 @@ These materials are associated with the University of Tehran Operating Systems L
 
 ## Laboratory reports
 
-The team's complete reports are retained under `reports/lab-01/` through `reports/lab-04/` in Markdown and PDF form. The PDFs are final submitted artifacts; the Markdown files are editable source documents. They remain attributable to the named contributors and are not automatically granted for reuse beyond review of this educational repository.
-
-## Repository standard
-
-`docs/standards/MRS_Repository_Standard.md` is a retained copy of the MRS-RS standard supplied by and owned by `@mragetsars`. It is included to make the migration criteria auditable and is not part of the xv6 software license.
+The team's complete reports are retained under `docs/reports/lab-01/` through `docs/reports/lab-04/` in Markdown and PDF form. The PDFs are submitted artifacts; the Markdown files are editable source documents. They remain attributable to the named contributors and are not automatically granted for reuse beyond review of this educational repository.
 
 ## No production assurance
 
-This repository is an educational kernel project. Its inclusion of synchronization or scheduling mechanisms does not constitute a security, safety, or production-readiness warranty.
+This repository is an educational kernel project. Its scheduling and synchronization mechanisms do not constitute a security, safety, or production-readiness warranty.

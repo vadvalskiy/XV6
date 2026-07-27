@@ -35,7 +35,7 @@ jobs:
       - name: Check dependencies
         run: make setup
 
-      - name: Check repository structure and attribution
+      - name: Check repository structure and source invariants
         run: make lint
 
       - name: Run fast regression tests

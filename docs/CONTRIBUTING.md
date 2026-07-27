@@ -2,11 +2,11 @@
 
 ## Development model
 
-All kernel changes must preserve the single cumulative xv6 source tree at the repository root. Do not create a second xv6 copy for a phase, experiment, or proposed fix. Phase-specific explanations belong in `docs/labs/`; executable changes belong in the repository root source tree.
+All kernel changes must preserve the single cumulative xv6 source tree under `xv6/`. Do not create a second xv6 copy for a phase, experiment, or proposed fix. Phase-specific explanations belong in `docs/labs/`; executable changes belong in `xv6/`.
 
 ## Branches
 
-Use one of the MRS-RS prefixes:
+Use a conventional prefix followed by a concise kebab-case description:
 
 ```text
 feature/
@@ -17,8 +17,6 @@ test/
 chore/
 build/
 ci/
-release/
-hotfix/
 ```
 
 Example:
@@ -66,4 +64,4 @@ make counter-matrix
 - include a deterministic regression or invariant check for behavioral changes;
 - distinguish compiled, smoke-tested, benchmarked, and historically reported results;
 - do not commit generated images, objects, executables, logs, or `dist/` trees;
-- update README architecture and verification documentation in the same change when interfaces or paths move.
+- update architecture and verification documentation when interfaces or paths move.

@@ -14,8 +14,34 @@ class RepositoryTests(unittest.TestCase):
             self.assertTrue((ROOT / "docs" / "labs" / f"{slug}.md").is_file())
             self.assertTrue((ROOT / "docs" / "assignments" / slug / "assignment.fa.pdf").is_file())
             self.assertTrue((ROOT / "docs" / "assignments" / slug / "assignment.fa.txt").is_file())
-            self.assertTrue((ROOT / "reports" / slug / "report.fa.md").is_file())
-            self.assertTrue((ROOT / "reports" / slug / "report.fa.pdf").is_file())
+            self.assertTrue((ROOT / "docs" / "reports" / slug / "report.fa.md").is_file())
+            self.assertTrue((ROOT / "docs" / "reports" / slug / "report.fa.pdf").is_file())
+
+
+    def test_public_documentation_layout_is_minimal(self) -> None:
+        for name in (
+            "README.fa.md",
+            "CHANGELOG.md",
+            "CODE_OF_CONDUCT.md",
+            "CONTRIBUTING.md",
+            "SECURITY.md",
+            "NOTICE.md",
+            "CITATION.cff",
+            ".mailmap",
+            "reports",
+        ):
+            self.assertFalse((ROOT / name).exists(), name)
+        for name in (
+            "README.md",
+            "CHANGELOG.md",
+            "CODE_OF_CONDUCT.md",
+            "CONTRIBUTING.md",
+            "SECURITY.md",
+            "NOTICE.md",
+        ):
+            self.assertTrue((ROOT / "docs" / name).is_file(), name)
+        self.assertFalse((ROOT / "docs" / "maintenance").exists())
+        self.assertFalse((ROOT / "docs" / "standards").exists())
 
     def test_all_phase_regressions_are_built(self) -> None:
         text = (XV6 / "Makefile").read_text()
@@ -33,4 +59,9 @@ class RepositoryTests(unittest.TestCase):
     def test_cumulative_feature_sources_exist(self) -> None:
         for name in ("find_sum.c", "sort_kernel.c", "schedstat.h", "pctest.c", "rwtest.c", "tickettest.c"):
             self.assertTrue((XV6 / name).is_file(), name)
+
+    def test_counter_matrix_quotes_dash_prefixed_cflags(self) -> None:
+        text = (ROOT / "scripts" / "run_counter_matrix.sh").read_text()
+        self.assertIn('"--extra-cflags=-DSYSCALL_COUNT_MODE=$mode"', text)
+        self.assertNotIn('--extra-cflags "-DSYSCALL_COUNT_MODE=$mode"', text)
 if __name__ == "__main__": unittest.main()

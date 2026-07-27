@@ -17,5 +17,5 @@ Lab 3 replaces the baseline round-robin-only policy with a measured multilevel s
 ## Evidence
 
 - milestone: `lab3-complete`;
-- report: [`reports/lab-03/report.fa.md`](../../reports/lab-03/report.fa.md) and [`report.fa.pdf`](../../reports/lab-03/report.fa.pdf);
+- report: [`docs/reports/lab-03/report.fa.md`](../reports/lab-03/report.fa.md) and [`report.fa.pdf`](../reports/lab-03/report.fa.pdf);
 - assignment: [`docs/assignments/lab-03/`](../assignments/lab-03/).

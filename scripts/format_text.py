@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Normalize first-party repository text without rewriting archived source evidence."""
+"""Normalize maintained repository text without rewriting archived course artifacts."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -9,20 +9,12 @@ ROOT_FILES = {
     ".editorconfig",
     ".gitattributes",
     ".gitignore",
-    ".mailmap",
-    "CHANGELOG.md",
-    "CITATION.cff",
-    "CODE_OF_CONDUCT.md",
-    "CONTRIBUTING.md",
     "Makefile",
-    "NOTICE.md",
-    "README.fa.md",
     "README.md",
-    "SECURITY.md",
 }
 FIRST_PARTY_DIRS = {".github", "docs", "scripts", "tests"}
-SUFFIXES = {".md", ".py", ".sh", ".txt", ".yml", ".yaml", ".cff"}
-ARCHIVAL_NAMES = {"assignment.txt", "original-report.fa.md"}
+SUFFIXES = {".md", ".py", ".sh", ".txt", ".yml", ".yaml"}
+ARCHIVAL_NAMES = {"assignment.fa.txt", "report.fa.md"}
 
 
 def eligible(path: Path) -> bool:
@@ -43,6 +35,8 @@ for candidate in ROOT.rglob("*"):
     if not eligible(candidate):
         continue
     text = candidate.read_text(encoding="utf-8")
-    normalized = "\n".join(line.rstrip() for line in text.splitlines()) + "\n"
+    normalized = "
+".join(line.rstrip() for line in text.splitlines()) + "
+"
     if text != normalized:
         candidate.write_text(normalized, encoding="utf-8")

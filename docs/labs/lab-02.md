@@ -17,5 +17,5 @@ Lab 2 extends the Lab 1 tree with a complete user-to-kernel system-call path and
 ## Evidence
 
 - milestone: `lab2-complete`;
-- report: [`reports/lab-02/report.fa.md`](../../reports/lab-02/report.fa.md) and [`report.fa.pdf`](../../reports/lab-02/report.fa.pdf);
+- report: [`docs/reports/lab-02/report.fa.md`](../reports/lab-02/report.fa.md) and [`report.fa.pdf`](../reports/lab-02/report.fa.pdf);
 - assignment: [`docs/assignments/lab-02/`](../assignments/lab-02/).

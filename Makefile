@@ -12,7 +12,7 @@ help:
 	  'make build                 Build the cumulative xv6 kernel and filesystem image' \
 	  'make run CPUS=N            Boot the cumulative kernel in QEMU' \
 	  'make test                  Run fast repository regression tests' \
-	  'make lint                  Check MRS-RS structure and Git attribution' \
+	  'make lint                  Check repository structure and source invariants' \
 	  'make verify-build          Clean-build source, dist, and all counter modes' \
 	  'make smoke CPUS=N          Boot once and run every Lab 1-4 guest regression' \
 	  'make counter-matrix-build  Compile counter modes 0, 1, and 2' \
@@ -28,6 +28,9 @@ build:
 	@$(MAKE) -C $(XV6_DIR) -j2 fs.img xv6.img
 
 run:
+	@$(MAKE) -C $(XV6_DIR) CPUS=$(CPUS) qemu
+
+run-nox:
 	@$(MAKE) -C $(XV6_DIR) CPUS=$(CPUS) qemu-nox
 
 test:
@@ -35,7 +38,6 @@ test:
 
 lint:
 	@python3 scripts/verify_repository.py
-	@python3 scripts/check_attribution.py
 
 verify-build:
 	@./scripts/verify_builds.sh
