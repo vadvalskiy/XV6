@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Repository and cumulative kernel verification
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install xv6 toolchain and QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential gcc-multilib make perl python3 qemu-system-x86
+
+      - name: Check dependencies
+        run: make setup
+
+      - name: Check repository structure and source invariants
+        run: make lint
+
+      - name: Run fast regression tests
+        run: make test
+
+      - name: Rebuild cumulative source, dist, and counter modes
+        run: make verify-build
+
+      - name: Run cumulative guest smoke test
+        run: make smoke CPUS=2

@@ -1,0 +1,55 @@
+#include "syscall.h"
+#include "traps.h"
+
+#define SYSCALL(name) \
+  .globl name; \
+  name: \
+    movl $SYS_ ## name, %eax; \
+    int $T_SYSCALL; \
+    ret
+
+SYSCALL(fork)
+SYSCALL(exit)
+SYSCALL(wait)
+SYSCALL(waitstats)
+SYSCALL(pipe)
+SYSCALL(read)
+SYSCALL(write)
+SYSCALL(close)
+SYSCALL(kill)
+SYSCALL(exec)
+SYSCALL(open)
+SYSCALL(mknod)
+SYSCALL(unlink)
+SYSCALL(fstat)
+SYSCALL(link)
+SYSCALL(mkdir)
+SYSCALL(chdir)
+SYSCALL(dup)
+SYSCALL(getpid)
+SYSCALL(sbrk)
+SYSCALL(sleep)
+SYSCALL(uptime)
+SYSCALL(setSeed)
+SYSCALL(getRandomNumber)
+SYSCALL(process_information)
+SYSCALL(sort_numbers)
+
+SYSCALL(set_scheduling_info)
+SYSCALL(change_queue)
+SYSCALL(print_scheduling_info)
+SYSCALL(getcount)
+SYSCALL(getcpucount)
+SYSCALL(getcountmode)
+SYSCALL(produce)
+SYSCALL(try_produce)
+SYSCALL(consume)
+SYSCALL(try_consume)
+SYSCALL(consume_value)
+SYSCALL(rw_acquire_read)
+SYSCALL(rw_release_read)
+SYSCALL(rw_acquire_write)
+SYSCALL(rw_release_write)
+SYSCALL(ticket_acquire)
+SYSCALL(ticket_release)
+SYSCALL(ticket_turn)

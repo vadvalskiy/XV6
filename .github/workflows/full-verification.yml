@@ -1,0 +1,39 @@
+name: Full verification
+
+on:
+  workflow_dispatch:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  counter-matrix:
+    name: Counter mode ${{ matrix.mode }} on ${{ matrix.cpus }} CPU(s)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [0, 1, 2]
+        cpus: [1, 4]
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install xv6 toolchain and QEMU
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            build-essential gcc-multilib make perl python3 qemu-system-x86
+
+      - name: Run cumulative Lab 1-4 smoke tests
+        run: >-
+          python3 scripts/qemu_smoke.py
+          --cpus ${{ matrix.cpus }}
+          --extra-cflags=-DSYSCALL_COUNT_MODE=${{ matrix.mode }}
+          --timeout 600
