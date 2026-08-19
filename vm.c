@@ -7,6 +7,7 @@
 #include "proc.h"
 #include "elf.h"
 #include "swap.h"
+#include "rammap.h"
 
 extern char data[];  // defined by kernel.ld
 pde_t *kpgdir;  // for use in scheduler()
@@ -59,7 +60,7 @@ walkpgdir(pde_t *pgdir, const void *va, int alloc)
 // physical addresses starting at pa. va and size might not
 // be page-aligned.
 int
-mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
+mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm, uint pid)
 {
   char *a, *last;
   pte_t *pte;
@@ -78,13 +79,8 @@ mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
     // If the page to be mapped has user permissions enabled
     // It is a page which will be accessed by user processes
     // hence, it should be swappable.
-    if(perm & PTE_U) {
-      if(rammap.use_lock)
-        acquire(&rammap.lock);
-      rammap[PA_2_RDX(pa)] = PACK(PTE_ADDR((uint)a), myproc()->pid, 1);
-      if(rammap.use_lock)
-        release(&rammap.lock);
-    }
+    if(perm & PTE_U)
+      rammap_make_entry(pa, (uint)a, pid, 1);
 
     if(a == last)
       break;
@@ -143,7 +139,7 @@ setupkvm(void)
     panic("PHYSTOP too high");
   for(k = kmap; k < &kmap[NELEM(kmap)]; k++)
     if(mappages(pgdir, k->virt, k->phys_end - k->phys_start,
-                (uint)k->phys_start, k->perm) < 0) {
+                (uint)k->phys_start, k->perm, PID_KERNEL) < 0) {
       freevm(pgdir);
       return 0;
     }
@@ -196,7 +192,7 @@ switchuvm(struct proc *p)
 // sz must be less than a page.
 /*excuse initcode from demand paging*/
 void
-inituvm(pde_t *pgdir, char *init, uint sz)
+inituvm(pde_t *pgdir, char *init, uint sz, uint pid)
 {
   char *mem;
 
@@ -204,7 +200,7 @@ inituvm(pde_t *pgdir, char *init, uint sz)
     panic("inituvm: more than a page");
   mem = kalloc();
   memset(mem, 0, PGSIZE);
-  mappages(pgdir, 0, PGSIZE, V2P(mem), PTE_P|PTE_W|PTE_U);
+  mappages(pgdir, 0, PGSIZE, V2P(mem), PTE_P|PTE_W|PTE_U, pid);
   memmove(mem, init, sz);
 }
 
@@ -270,7 +266,7 @@ copyprof(struct elfprof *ep)
     kfree((char *)nep);
     return 0;
   }
-  memmove((char *)ep->ls, (char *)nep->ls, MAXSEG * sizeof(struct loadseg));
+  memmove((char *)nep->ls, (char *)ep->ls, MAXSEG * sizeof(struct loadseg));
   return nep;
 }
 
@@ -308,8 +304,10 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       beforehand, so walkpgdir() can't find the PTE
       for such cases and return 0.*/
     // Just skip to the next PDE
-    if(!pte)
+    if(!pte){
       a = PGADDR(PDX(a) + 1, 0, 0) - PGSIZE;
+      continue;
+    }
 
     // If page is not allocated for this PTE
     // Nothing to do, just continue
@@ -319,12 +317,8 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
     // If page is swapped out and currently exists
     // in the swapspace.
     // Just decrement the swapslot refcount.
-    else if(!(*pte & PTE_P)) {
-      uint slot = GET_SWAPSLOT((uint)*pte);
-      acquire(&swaplock);
-      swapmap[slot]--;
-      release(&swaplock);
-    }
+    else if(!(*pte & PTE_P))
+      swap_decrease_refcount(GET_SWAPSLOT((uint)*pte));
 
     // If page is allocated for this PTE and present
     // in the RAM
@@ -370,15 +364,13 @@ clearpteu(pde_t *pgdir, char *uva)
   if(pte == 0)
     panic("clearpteu");
   *pte &= ~PTE_U;
-  acquire(&ramlock);
-  rammap[PA_2_RDX(PTE_ADDR((uint)*pte)] = PACK(0, PID_KERNEL, 0);
-  release(&ramlock);
+  rammap_make_entry((uint)*pte, 0, PID_KERNEL, 0);
 }
 
 // Given a parent process's page table, create a copy
 // of it for a child.
 pde_t*
-copyuvm(pde_t *pgdir, uint sz)
+copyuvm(pde_t *pgdir, uint sz, uint child_pid)
 {
   pde_t *d;
   pte_t *pte, *new_pte;
@@ -400,17 +392,12 @@ copyuvm(pde_t *pgdir, uint sz)
       continue;
 
     // If the parent's page is currently swapped out.
-    else if(*pte & !PTE_P) {
+    else if(!(*pte & PTE_P)) {
       // Get the slot number in swapspace from the PTE.
       uint slot = GET_SWAPSLOT((uint)*pte);
 
-      acquire(&swaplock);
-      if(swapmap[slot] == MAX_REFCOUNT) {
-        release(&swaplock);
+      if(!swap_increase_refcount(slot))
         goto bad;
-      }
-      swapmap[slot]++;
-      release(&swaplock);
 
       // Copy the swapslot index to the corresponding PTE
       // of the child
@@ -418,9 +405,7 @@ copyuvm(pde_t *pgdir, uint sz)
         memory, so abort copyuvm() and call freevm()*/
       if((new_pte = walkpgdir(d, (char *)i, 1)) == 0) {
         // revert the refcount increment done before
-        acquire(&swaplock);
-        swapmap[slot]--;
-        release(&swaplock);
+        swap_decrease_refcount(slot);
         goto bad;
       }
 
@@ -434,11 +419,15 @@ copyuvm(pde_t *pgdir, uint sz)
     else {
       pa = PTE_ADDR(*pte);
       flags = PTE_FLAGS(*pte);
-      if((mem = kalloc()) == 0)
+      rammap_make_entry(pa, i, myproc()->pid, 0);
+      if((mem = kalloc()) == 0) {
+        rammap_make_entry(pa, i, myproc()->pid, 1);
         goto bad;
+      }
       memmove(mem, (char*)P2V((char *)pa), PGSIZE);
-      if(mappages(d, (void*)i, PGSIZE, V2P((uint)mem), flags) < 0) {
-        kfree((char *)P2V(mem));
+      rammap_make_entry(pa, i, myproc()->pid, 1);
+      if(mappages(d, (void*)i, PGSIZE, V2P((uint)mem), flags, child_pid) < 0) {
+        kfree((char *)mem);
         goto bad;
       }
     }

@@ -5,6 +5,7 @@
 #include "mmu.h"
 #include "x86.h"
 #include "proc.h"
+#include "swap.h"
 
 // Fetches the struct loadseg which spans across the
 // faulting address.
@@ -20,7 +21,7 @@ fetch_loadseg(uint flt_addr, struct elfprof *ep)
   if(!ep)
     return 0;
 
-  for(int i = 0; i <= ep->numseg; i++) {
+  for(int i = 0; i < ep->numseg; i++) {
     if(ep->ls[i].vaddr <= flt_addr && ((ep->ls[i].vaddr + ep->ls[i].memsz) >= flt_addr))
       return &ep->ls[i];
   }
@@ -59,14 +60,14 @@ loadpage(struct inode *ip, uint flt_addr, char *pa, struct loadseg *ls)
 }
 
 // Checks if the page fault was triggered due to an
-// illegal guard page access.
+// illegal guard range access.
 static int
 check_stack_access(struct elfprof *ep, uint flt_addr)
 {
-  uint guard_pg = PGROUNDUP(ep->end_vaddr);
-  uint stack_pg = guard_pg + PGSIZE;
+  uint guard_range = PGROUNDUP(ep->end_vaddr);
+  uint stack_pg = guard_range + PGSIZE;
 
-  if(flt_addr < guard_pg || flt_addr >= stack_pg)
+  if(flt_addr < guard_range || flt_addr >= stack_pg)
     return 0;
   return -1;
 }
@@ -104,25 +105,27 @@ page_fault_handler(void)
   memset(empty_page, 0, PGSIZE);
 
   // Check if page was swapped out before.
-  uint pte = (uint)walkpgdir(p->pgdir, flt_addr, 0);
-  if(PTE_ADDR(pte)) {
-    uint swap_off = PTE_ADDR(pte);
-    read_from_swap(empty_page, swap_off);
+  pte_t *pte = walkpgdir(p->pgdir, flt_addr, 0);
+  if(pte && PTE_ADDR(*pte)) {
+    uint swapslot = GET_SWAPSLOT(*pte);
+    read_from_swap(swapslot, empty_page);
   }
 
   // Map the allocated page's physical address
   // to user's virtual address space.
-  mappages(p->pgdir, flt_addr, PGSIZE, V2P(empty_page), PTE_P|PTE_W|PTE_U);
+  mappages(p->pgdir, flt_addr, PGSIZE, V2P(empty_page), PTE_P|PTE_W|PTE_U, p->pid);
 
   // If the issued address was intended to access the heap, return
   // as we have already mapped an empty page to the page table entry
   // corresponding to the faulting address.
-  if((uint)flt_addr >= PGROUNDUP(p->ep->end_vaddr) + 2*PGSIZE)
+  // If it was a stack access, also return as we have loaded from swap.
+  if((uint)flt_addr >= PGROUNDUP(p->ep->end_vaddr) + PGSIZE)
     return;
 
   // Fetch the information (mainly the ELF offset and size)
   // of the loadable segment which spans across the faulting
-  // address (if not, terminate the process as it's an illegal access)
+  // address.
+  // If not, terminate the process as it's an illegal access.
   struct loadseg *ls = fetch_loadseg((uint)flt_addr, p->ep);
   if(!ls)
     goto illegal_access;

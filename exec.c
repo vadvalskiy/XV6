@@ -10,7 +10,6 @@
 int
 exec(char *path, char **argv)
 {
-  //cprintf("exec called: %s\n", argv[0]);
   char *s, *last, *ustackpg;
   int i, off;
   uint argc, sz, sp, ustack[3+MAXARG+1];
@@ -61,19 +60,21 @@ exec(char *path, char **argv)
 
   // Update the program's virtual size.
   sz = ep->end_vaddr;
-
-  // Allocate two pages at the next page boundary.
-  // Make the first inaccessible.  Use the second as the user stack.
-  /* excuse the two stack pages from demand paging
-    as these are immediately required by exec for argv */
   sz = PGROUNDUP(sz);
-  for(i = 0; i < 2; i++){
-    if((ustackpg = kalloc()) == 0)
-      goto bad;
-    mappages(pgdir, (char *)sz, PGSIZE, V2P(ustackpg), PTE_P|PTE_W|PTE_U);
-    sz += PGSIZE;
-  }
-  clearpteu(pgdir, (char*)(sz - 2*PGSIZE));
+
+  // Allocate stack page at VA: sz + PGSIZE.
+  /* VA from sz to sz + PGSIZE was meant to be mapped to
+    a guard page.
+    Because of demand paging, that range of VA is left unmapped
+    and is handled by the page fault handler if the process ever
+    faults there.*/
+  // Stack page is excused from demand paging here (can be
+  // subject to later if evicted) because of arguments.
+  sz += PGSIZE;
+  if((ustackpg = kalloc()) == 0)
+    goto bad;
+  mappages(pgdir, (char *)sz, PGSIZE, V2P(ustackpg), PTE_P|PTE_W|PTE_U, curproc->pid);
+  sz += PGSIZE;
   sp = sz;
 
   // Push argument strings, prepare rest of stack in ustack.

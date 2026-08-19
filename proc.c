@@ -7,7 +7,7 @@
 #include "proc.h"
 #include "spinlock.h"
 #include "fs.h"
-#include "swap.h"
+
 
 struct {
   struct spinlock lock;
@@ -65,6 +65,22 @@ myproc(void) {
   p = c->proc;
   popcli();
   return p;
+}
+
+struct proc*
+fetch_proc(uint pid)
+{
+  struct proc *ret_proc = 0;
+  acquire(&ptable.lock);
+  for(uint i = 0; i < NPROC; i++) {
+    if(ptable.proc[i].pid == pid) {
+      ret_proc = &ptable.proc[i];
+      release(&ptable.lock);
+      return ret_proc;
+    }
+  }
+  release(&ptable.lock);
+  return ret_proc;
 }
 
 //PAGEBREAK: 32
@@ -133,7 +149,7 @@ userinit(void)
   initproc = p;
   if((p->pgdir = setupkvm()) == 0)
     panic("userinit: out of memory?");
-  inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size);
+  inituvm(p->pgdir, _binary_initcode_start, (int)_binary_initcode_size, p->pid);
   p->sz = PGSIZE;
   memset(p->tf, 0, sizeof(*p->tf));
   p->tf->cs = (SEG_UCODE << 3) | DPL_USER;
@@ -210,8 +226,10 @@ fork(void)
   }
 
   // Copy process state from proc.
-  if(((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0) ||
+  if(((np->pgdir = copyuvm(curproc->pgdir, curproc->sz, np->pid)) == 0) ||
     ((np->ep = copyprof(curproc->ep)) == 0)){
+    if(np->pgdir)
+      freevm(np->pgdir);
     kfree(np->kstack);
     np->kstack = 0;
     np->state = UNUSED;

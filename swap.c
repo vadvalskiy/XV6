@@ -1,22 +1,42 @@
 #include "types.h"
 #include "defs.h"
-#include "param.h"
-#include "memlayout.h"
 #include "mmu.h"
-#include "proc.h"
-#include "x86.h"
-#include "traps.h"
 #include "spinlock.h"
+#include "sleeplock.h"
 #include "fs.h"
 #include "buf.h"
+#include "swap.h"
 
-struct spinlock swaplock;
-uint8_t swapmap[SWAP_PAGES];
+struct {
+  struct spinlock lock;
+  uchar map[SWAP_PAGES];
+} swapmap;
 
 void
 swapinit()
 {
-  initlock(&swaplock, "swapmap");
+  initlock(&swapmap.lock, "swapmap");
+}
+
+uint
+swap_increase_refcount(uint slot)
+{
+  acquire(&swapmap.lock);
+  if(swapmap.map[--slot] == MAX_REFCOUNT) {
+    release(&swapmap.lock);
+    return 0;
+  }
+  swapmap.map[slot]++;
+  release(&swapmap.lock);
+  return 1;
+}
+
+void
+swap_decrease_refcount(uint slot)
+{
+  acquire(&swapmap.lock);
+  swapmap.map[--slot]--;
+  release(&swapmap.lock);
 }
 
 // Return offset + 1
@@ -24,15 +44,15 @@ swapinit()
 static uint
 find_free_swapslot(void)
 {
-  acquire(&swaplock);
+  acquire(&swapmap.lock);
   for(int i = 0; i < SWAP_PAGES; i++) {
-    if(swapmap[i] == 0) {
-      swapmap[i]++;
-      release(&swaplock);
+    if(swapmap.map[i] == 0) {
+      swapmap.map[i]++;
+      release(&swapmap.lock);
       return i + 1;
     }
   }
-  release(&swaplock);
+  release(&swapmap.lock);
   return 0;
 }
 
@@ -46,17 +66,17 @@ read_from_swap(uint page_index, char *dst)
       memmove(dst + (i * 512), b->data, 512);
       brelse(b);
   }
-  uint idx=page_index/32;
-  uint off=page_index-idx*32;
-  acquire(&swaplock);
-	swapmap[idx]--;
-	release(&swaplock);
+  acquire(&swapmap.lock);
+	swapmap.map[page_index]--;
+	release(&swapmap.lock);
 }
 
 uint
 write_to_swap(char *page)
 {
-  uint page_index=find_free_slot();
+  uint page_index=find_free_swapslot();
+  if(!page_index)
+    return 0;
   uint sector_start = (page_index-1)*8;
 
   for(int i = 0; i < 8; i++){

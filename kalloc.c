@@ -8,7 +8,9 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "spinlock.h"
-#include "swap.h"
+#include "proc.h"
+#include "rammap.h"
+#include "x86.h"
 
 void freerange(void *vstart, void *vend);
 extern char end[]; // first address after kernel loaded from ELF file
@@ -29,6 +31,18 @@ struct {
   int use_lock;
   uint map[RAMMAP_PAGES];
 } rammap;
+
+void
+rammap_make_entry(uint pa, uint va, uint pid, uint swap)
+{
+  // Brand: Cooper, what are you doing??
+  // Cooper: Locking.
+  if(rammap.use_lock)
+    acquire(&rammap.lock);
+  rammap.map[PA_2_RDX(pa)] = PACK(va, pid, swap);
+  if(rammap.use_lock)
+    release(&rammap.lock);
+}
 
 // Initialization happens in two phases.
 // 1. main() calls kinit1() while still using entrypgdir to place just
@@ -97,14 +111,16 @@ kfree(char *v)
 static uint
 evict_page(void)
 {
+  uint pa, va, pid;
   uint victim_entry = 0;
-  uint victim_idx = -1;
+  int victim_idx = -1;
+  struct proc* vproc;
 
   // Choose a victim to evict
   acquire(&rammap.lock);
-  for(int i = RAMMAP_PAGES - 1; i >= 0; i--) {
-    if(SWAP_BIT(rammap[i])) {
-      victim_entry = rammap[i];
+  for(int i = PA_2_RDX(V2P(PGROUNDUP((uint)end))); i < RAMMAP_PAGES; i++) {
+    if(SWAP_PERM(rammap.map[i])) {
+      victim_entry = rammap.map[i];
       victim_idx = i;
       break;
     }
@@ -117,22 +133,12 @@ evict_page(void)
 
   // Find out the owner pid and the virtual
   // address(vpn) which this page is mapped to.
-  uint pid = GET_PID(victim_entry);
-  uint va = PTE_ADDR(victim_entry);
-  uint pa = RDX_2_PA(victim_idx);
+  pid = GET_PID(victim_entry);
+  va = PTE_ADDR(victim_entry);
+  pa = RDX_2_PA(victim_idx);
 
   // Fetch the struct proc of owner process
-  struct proc *vproc = 0;
-  acquire(&ptable.lock);
-  for(i = 0; i < NPROC; i++) {
-    if(proc[i].pid == pid) {
-      vproc = &proc[i];
-      break;
-    }
-  }
-  release(&ptable.lock);
-
-  if(!vproc)
+  if((vproc = fetch_proc(pid)) == 0)
     panic("corrupt rammap");
 
   // Write contents of the page to swapspace
@@ -143,10 +149,14 @@ evict_page(void)
   // Store the swapslot index into the PTE
   // corresponding to the evicted page in
   // owner process's address space.
-  pte_t *pte = walkpgdir(vproc->pgdir, va, 0);
+  // Set PTE_P bit to zero.
+  pte_t *pte = walkpgdir(vproc->pgdir, (char*)va, 0);
   if(!pte)
     panic("corrupt rammap");
-  *pte = ((slot << 12) | PTE_FLAGS(*pte));
+  *pte = ((slot << 12) | (PTE_FLAGS(*pte) & ~PTE_P));
+
+  // Invalidate corresponding TLB entry.
+  invlpg((void*)va);
 
   // Finally update corresponding rammap entry
   // of the page as free.
@@ -168,16 +178,14 @@ kalloc()
 
   if(kmem.use_lock)
     acquire(&kmem.lock);
-
   r = kmem.freelist;
-  if (r) {
+  if(r) // fixed.
     kmem.freelist = r->next;
-    if(kmem.use_lock)
-      release(&kmem.lock);
-  }
+  if(kmem.use_lock)
+    release(&kmem.lock);
 
   // No free pages found
-  else {
+  if(!r) {
     // Choose and evict a page from RAM
     // to swapspace and get the PA of the
     // now free RAM frame.
@@ -194,11 +202,13 @@ kalloc()
   }
 
   // mark page to be owned by kernel initially
-  if(rammap.use_lock)
-    acquire(&rammap.lock);
-  rammap.map[PA_2_RDX(V2P(r))] = PACK(0, PID_KERNEL, 0);
-  if(rammap.use_lock)
-    release(&rammap.lock);
+  if(r) {
+    if(rammap.use_lock)
+      acquire(&rammap.lock);
+    rammap.map[PA_2_RDX(V2P(r))] = PACK(0, PID_KERNEL, 0);
+    if(rammap.use_lock)
+      release(&rammap.lock);
+  }
 
   return (char*)r;
 }
