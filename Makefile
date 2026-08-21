@@ -184,6 +184,7 @@ UPROGS=\
 	_cp\
 	_head\
 	_tail\
+	_trylseek
 
 fs.img: mkfs README test.txt $(UPROGS)
 	./mkfs fs.img README test.txt $(UPROGS)
