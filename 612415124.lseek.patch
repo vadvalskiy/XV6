@@ -1,15 +1,15 @@
 diff --git a/Makefile b/Makefile
-index 889a754..e9693ce 100644
+index 09d790c..8282a36 100644
 --- a/Makefile
 +++ b/Makefile
-@@ -184,6 +184,7 @@ UPROGS=\
- 	_cp\
- 	_head\
- 	_tail\
-+	_trylseek
+@@ -181,6 +181,7 @@ UPROGS=\
+ 	_usertests\
+ 	_wc\
+ 	_zombie\
++	_trylseek\
  
- fs.img: mkfs README test.txt $(UPROGS)
- 	./mkfs fs.img README test.txt $(UPROGS)
+ fs.img: mkfs README $(UPROGS)
+ 	./mkfs fs.img README $(UPROGS)
 diff --git a/fcntl.h b/fcntl.h
 index d565483..99400a9 100644
 --- a/fcntl.h
@@ -100,30 +100,6 @@ index bfe61b7..90b4109 100644
  int
  sys_write(void)
  {
-diff --git a/user.h b/user.h
-index 4f99c52..d01c033 100644
---- a/user.h
-+++ b/user.h
-@@ -8,6 +8,7 @@ int wait(void);
- int pipe(int*);
- int write(int, const void*, int);
- int read(int, void*, int);
-+int lseek(int, int, int); //function declaration
- int close(int);
- int kill(int);
- int exec(char*, char**);
-diff --git a/usys.S b/usys.S
-index 8bfd8a1..b5c9a5b 100644
---- a/usys.S
-+++ b/usys.S
-@@ -14,6 +14,7 @@ SYSCALL(wait)
- SYSCALL(pipe)
- SYSCALL(read)
- SYSCALL(write)
-+SYSCALL(lseek)
- SYSCALL(close)
- SYSCALL(kill)
- SYSCALL(exec)
 diff --git a/trylseek.c b/trylseek.c
 new file mode 100644
 index 0000000..b081ff8
@@ -169,3 +145,27 @@ index 0000000..b081ff8
 +  printf(1, "\n");
 +  exit();
 +}
+diff --git a/user.h b/user.h
+index 4f99c52..d01c033 100644
+--- a/user.h
++++ b/user.h
+@@ -8,6 +8,7 @@ int wait(void);
+ int pipe(int*);
+ int write(int, const void*, int);
+ int read(int, void*, int);
++int lseek(int, int, int); //function declaration
+ int close(int);
+ int kill(int);
+ int exec(char*, char**);
+diff --git a/usys.S b/usys.S
+index 8bfd8a1..b5c9a5b 100644
+--- a/usys.S
++++ b/usys.S
+@@ -14,6 +14,7 @@ SYSCALL(wait)
+ SYSCALL(pipe)
+ SYSCALL(read)
+ SYSCALL(write)
++SYSCALL(lseek)
+ SYSCALL(close)
+ SYSCALL(kill)
+ SYSCALL(exec)
