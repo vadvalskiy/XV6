@@ -82,7 +82,7 @@ argptr(int n, char **pp, int size)
 
   if(argaddr(n, &i) < 0)
     return -1;
-  if(size < 0 || (uint)i >= proc->sz || (uint)i+size > proc->sz)
+  if(size < 0 || i >= proc->sz || i+size > proc->sz)
     return -1;
   *pp = (char*)i;
   return 0;
@@ -95,8 +95,8 @@ argptr(int n, char **pp, int size)
 int
 argstr(int n, char **pp)
 {
-  int addr;
-  if(argint(n, &addr) < 0)
+  addr_t addr;
+  if(argaddr(n, &addr) < 0)
     return -1;
   return fetchstr(addr, pp);
 }
